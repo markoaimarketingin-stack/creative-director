@@ -1,0 +1,151 @@
+import json
+from asyncio import sleep
+from typing import Any, TypeVar
+
+import httpx
+from pydantic import BaseModel
+
+from app.core.config import Settings
+
+StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
+
+
+class GroqLLMProvider:
+    def __init__(self, settings: Settings) -> None:
+        self._api_key = settings.groq_api_key
+        self._model = settings.groq_model
+        self._fallback_models = [
+            model.strip()
+            for model in settings.groq_fallback_models.split(",")
+            if model.strip() and model.strip() != self._model
+        ]
+        self._timeout = settings.groq_timeout_seconds
+        self._base_url = settings.groq_base_url.rstrip("/")
+        self._max_retries = max(0, settings.groq_max_retries)
+        self._retry_base_delay_seconds = max(0.1, settings.groq_retry_base_delay_seconds)
+        self._temperature = settings.groq_temperature
+        self._client: httpx.AsyncClient | None = None
+
+    async def structured_completion(
+        self,
+        *,
+        instructions: str,
+        user_prompt: str,
+        response_model: type[StructuredModel],
+    ) -> StructuredModel:
+        payload = await self.json_completion(
+            instructions=instructions,
+            user_prompt=user_prompt,
+        )
+        return response_model.model_validate(payload)
+
+    async def json_completion(
+        self,
+        *,
+        instructions: str,
+        user_prompt: str,
+    ) -> dict[str, Any]:
+        if not self._api_key:
+            raise ValueError("GROQ_API_KEY is not configured.")
+
+        errors: list[str] = []
+        models = [self._model, *self._fallback_models]
+
+        for model_name in models:
+            try:
+                return await self._structured_completion_with_model(
+                    model_name=model_name,
+                    instructions=instructions,
+                    user_prompt=user_prompt,
+                )
+            except RuntimeError as exc:
+                errors.append(f"{model_name}: {exc}")
+
+        raise RuntimeError(" | ".join(errors))
+
+    async def _structured_completion_with_model(
+        self,
+        *,
+        model_name: str,
+        instructions: str,
+        user_prompt: str,
+    ) -> dict[str, Any]:
+        client = self._get_client()
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await client.post(
+                    "/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model_name,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    f"{instructions}\n\n"
+                                    "Return only valid JSON matching the requested schema. "
+                                    "Prefer the schema's exact field names and enum values. "
+                                    "Do not include markdown fences or explanatory text."
+                                ),
+                            },
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": self._temperature,
+                        "response_format": {"type": "json_object"},
+                    },
+                )
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                detail = exc.response.text[:500]
+                if status_code == 429 and attempt < self._max_retries:
+                    await sleep(self._retry_delay_seconds(attempt))
+                    continue
+                raise RuntimeError(f"Groq API error {status_code}: {detail}") from exc
+            except httpx.HTTPError as exc:
+                if attempt < self._max_retries:
+                    await sleep(self._retry_delay_seconds(attempt))
+                    continue
+                raise RuntimeError(f"Groq connection error: {exc}") from exc
+
+            body = response.json()
+            try:
+                content = body["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise RuntimeError(f"Groq returned an unexpected response payload: {body}") from exc
+
+            if not isinstance(content, str) or not content.strip():
+                raise RuntimeError("Groq returned no structured result.")
+
+            try:
+                payload = json.loads(content)
+            except json.JSONDecodeError as exc:
+                preview = content[:500]
+                raise RuntimeError(f"Groq returned invalid JSON: {preview}") from exc
+
+            if not isinstance(payload, dict):
+                raise RuntimeError("Groq returned JSON, but not an object payload.")
+            return payload
+
+        raise RuntimeError(f"Groq request exhausted retries for model {model_name}.")
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=httpx.Timeout(self._timeout),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is None:
+            return
+        await self._client.aclose()
+        self._client = None
+
+    def _retry_delay_seconds(self, attempt: int) -> float:
+        return self._retry_base_delay_seconds * (2**attempt)

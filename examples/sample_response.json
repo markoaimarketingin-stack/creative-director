@@ -1,0 +1,192 @@
+{
+  "campaign_name": "Marko AI conversions meta",
+  "campaign_slug": "marko-ai-conversions-meta",
+  "created_at": "2026-03-29T10:30:00Z",
+  "input": {
+    "brand_name": "Marko AI",
+    "product_description": "AI ad tool that generates hooks, ad copy, platform-specific strategy, and creative directions for founders.",
+    "target_audience": "Startup founders and growth marketers who run paid acquisition in-house",
+    "platform": "meta",
+    "objective": "conversions",
+    "tone": "premium",
+    "key_benefits": [
+      "Launch more ad variations in minutes",
+      "Generate sharper hooks for cold traffic",
+      "Turn one campaign brief into ready-to-test creative packages"
+    ],
+    "competitors": [
+      "Jasper",
+      "Copy.ai",
+      "AdCreative.ai"
+    ],
+    "visual_style": "cinematic SaaS ads with founder energy",
+    "campaign_name": null,
+    "hook_count": 15,
+    "angle_count": 5,
+    "copy_count": 20,
+    "concept_count": 5
+  },
+  "hooks": [
+    {
+      "type": "curiosity",
+      "text": "Most founders are testing ads backwards. Here is the fix.",
+      "rationale": "Calls out a hidden mistake and opens a curiosity gap."
+    },
+    {
+      "type": "benefit_driven",
+      "text": "Turn one product brief into 20 ad variations before lunch.",
+      "rationale": "Makes the speed benefit concrete and highly visual."
+    }
+  ],
+  "angles": [
+    {
+      "name": "Problem to System",
+      "description": "Founders are drowning in repetitive ideation and need a repeatable engine.",
+      "target_emotion": "relief",
+      "use_case": "Cold traffic conversion campaigns"
+    },
+    {
+      "name": "Founder Leverage",
+      "description": "Position Marko AI as the multiplier for lean growth teams.",
+      "target_emotion": "confidence",
+      "use_case": "Retargeting and founder-led brand ads"
+    }
+  ],
+  "ad_copies": [
+    {
+      "copy_id": "copy-01",
+      "hook_text": "Most founders are testing ads backwards. Here is the fix.",
+      "angle_name": "Problem to System",
+      "primary_text": "Most ad teams waste days on weak hooks. Marko AI turns one brief into sharp messaging, angle stacks, and ready-to-test ad packages in minutes.",
+      "headline": "Stop Testing Ads Backwards",
+      "cta": "Book Demo",
+      "description": "Build better ad systems."
+    },
+    {
+      "copy_id": "copy-02",
+      "hook_text": "Turn one product brief into 20 ad variations before lunch.",
+      "angle_name": "Founder Leverage",
+      "primary_text": "If your growth team is small, your creative system has to be unfairly efficient. Marko AI helps founders spin one offer into multiple ads fast.",
+      "headline": "20 Variations, One Brief",
+      "cta": "Start Now",
+      "description": "Scale creative output faster."
+    }
+  ],
+  "visual_concepts": [
+    {
+      "hook_text": "Most founders are testing ads backwards. Here is the fix.",
+      "angle_name": "Problem to System",
+      "scene_description": "Late-night founder at a laptop reviewing ad dashboards with structured sticky notes and clean product UI in frame",
+      "camera_angle": "three-quarter over-the-shoulder shot",
+      "background_setting": "minimal startup studio with warm practical lights",
+      "color_palette": [
+        "charcoal",
+        "warm amber",
+        "soft cyan"
+      ],
+      "mood": "focused and high-agency",
+      "style_reference": "cinematic SaaS commercial",
+      "aspect_ratio": "1:1",
+      "media_type": "image",
+      "concept_id": "concept-01",
+      "generation_prompt": "Create a 1:1 image performance ad creative for Marko AI..."
+    }
+  ],
+  "generated_creatives": [
+    {
+      "concept_id": "concept-01",
+      "provider": "nanobanana",
+      "provider_api_version": "v2",
+      "status": "generated",
+      "prompt": "Create a 1:1 image performance ad creative for Marko AI...",
+      "image_urls": [
+        "https://cdn.example.com/marko-ai/concept-01.png"
+      ],
+      "video_urls": [],
+      "error": null,
+      "raw_response": {
+        "status": 200,
+        "images": [
+          "https://cdn.example.com/marko-ai/concept-01.png"
+        ]
+      }
+    }
+  ],
+  "scored_creatives": [
+    {
+      "concept_id": "concept-01",
+      "emotional_intensity": 84,
+      "clarity": 92,
+      "uniqueness": 79,
+      "platform_fit": 95,
+      "total_score": 88,
+      "rank": 1,
+      "rationale": "Strongest on meta because the angle is problem to system with a 1:1 execution."
+    }
+  ],
+  "creative_assets": [
+    {
+      "campaign_name": "Marko AI conversions meta",
+      "campaign_slug": "marko-ai-conversions-meta",
+      "platform": "meta",
+      "objective": "conversions",
+      "concept_id": "concept-01",
+      "hook_type": "curiosity",
+      "hook_text": "Most founders are testing ads backwards. Here is the fix.",
+      "angle_name": "Problem to System",
+      "target_emotion": "relief",
+      "primary_text": "Most ad teams waste days on weak hooks. Marko AI turns one brief into sharp messaging, angle stacks, and ready-to-test ad packages in minutes.",
+      "headline": "Stop Testing Ads Backwards",
+      "description": "Build better ad systems.",
+      "cta": "Book Demo",
+      "visual_concept": {
+        "hook_text": "Most founders are testing ads backwards. Here is the fix.",
+        "angle_name": "Problem to System",
+        "scene_description": "Late-night founder at a laptop reviewing ad dashboards with structured sticky notes and clean product UI in frame",
+        "camera_angle": "three-quarter over-the-shoulder shot",
+        "background_setting": "minimal startup studio with warm practical lights",
+        "color_palette": [
+          "charcoal",
+          "warm amber",
+          "soft cyan"
+        ],
+        "mood": "focused and high-agency",
+        "style_reference": "cinematic SaaS commercial",
+        "aspect_ratio": "1:1",
+        "media_type": "image",
+        "concept_id": "concept-01",
+        "generation_prompt": "Create a 1:1 image performance ad creative for Marko AI..."
+      },
+      "generated_creative": {
+        "concept_id": "concept-01",
+        "provider": "nanobanana",
+        "provider_api_version": "v2",
+        "status": "generated",
+        "prompt": "Create a 1:1 image performance ad creative for Marko AI...",
+        "image_urls": [
+          "https://cdn.example.com/marko-ai/concept-01.png"
+        ],
+        "video_urls": [],
+        "error": null,
+        "raw_response": {
+          "status": 200,
+          "images": [
+            "https://cdn.example.com/marko-ai/concept-01.png"
+          ]
+        }
+      },
+      "score": {
+        "concept_id": "concept-01",
+        "emotional_intensity": 84,
+        "clarity": 92,
+        "uniqueness": 79,
+        "platform_fit": 95,
+        "total_score": 88,
+        "rank": 1,
+        "rationale": "Strongest on meta because the angle is problem to system with a 1:1 execution."
+      }
+    }
+  ],
+  "output_directory": "output/marko-ai-conversions-meta/20260329T103000Z"
+}
+

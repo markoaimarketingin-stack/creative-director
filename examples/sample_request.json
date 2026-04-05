@@ -1,0 +1,21 @@
+{
+  "brand_name": "Marko AI",
+  "product_description": "AI ad tool that generates hooks, ad copy, platform-specific strategy, and creative directions for founders.",
+  "target_audience": "Startup founders and growth marketers who run paid acquisition in-house",
+  "platform": "meta",
+  "objective": "conversions",
+  "tone": "premium",
+  "key_benefits": [
+    "Launch more ad variations in minutes",
+    "Generate sharper hooks for cold traffic"
+  ],
+  "competitors": [
+    "Jasper",
+    "Copy.ai"
+  ],
+  "visual_style": "cinematic SaaS ads with founder energy",
+  "hook_count": 10,
+  "angle_count": 3,
+  "copy_count": 5,
+  "concept_count": 2
+}
