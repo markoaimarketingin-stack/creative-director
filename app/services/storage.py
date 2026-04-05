@@ -19,10 +19,12 @@ class CampaignStorage:
         self._output_root.mkdir(parents=True, exist_ok=True)
         self._s3_bucket_name = settings.s3_bucket_name
         self._s3_client = (
-            boto3.client("s3", region_name=settings.s3_region)
-            if settings.s3_bucket_name and boto3 is not None
-            else None
-        )
+        boto3.client("s3", region_name=settings.s3_region)
+        if settings.s3_bucket_name and boto3 is not None
+        else None
+    )
+        self._supabase_url = getattr(settings, "supabase_url", None)
+        self._supabase_key = getattr(settings, "supabase_service_role_key", None)
 
     def save_package(self, package: CampaignPackage) -> str:
         timestamp = package.created_at.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
