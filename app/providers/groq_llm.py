@@ -135,9 +135,11 @@ class GroqLLMProvider:
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
+            limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
                 timeout=httpx.Timeout(self._timeout),
+                limits=limits,
             )
         return self._client
 

@@ -21,10 +21,13 @@ class NanoBananaClient:
         self._preferred_version = settings.nanobanana_preferred_api_version.lower()
         self._poll_attempts = settings.nanobanana_poll_attempts
         self._poll_interval_seconds = settings.nanobanana_poll_interval_seconds
+        limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=httpx.Timeout(settings.nanobanana_timeout_seconds),
             follow_redirects=True,
+            limits=limits,
+
         )
 
     async def generate_batch(

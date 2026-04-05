@@ -22,9 +22,16 @@ async def generate_creatives(
     try:
         return await engine.generate_campaign(payload)
     except ValueError as exc:
+        print(f"[ERROR] ValueError: {exc}")  # Add
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except RuntimeError as exc:
+        print(f"[ERROR] RuntimeError: {exc}")  # Add
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # Add whole block
+        print(f"[ERROR] Unexpected: {type(exc).__name__}: {exc}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/top-creatives", response_model=TopCreativesResponse)
