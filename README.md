@@ -216,7 +216,7 @@ output/
       campaign_manifest.json
 ```
 
-## Notes
+## Notes:
 
 - `GROQ_API_KEY` is required for hooks, angles, copy, and visual concepts.
 - Groq requests now use retry/backoff for transient failures and `429` responses.
