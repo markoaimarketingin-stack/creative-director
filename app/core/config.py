@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     s3_bucket_name: str | None = None
     s3_region: str | None = None
+    supabase_url: str | None = None
+    supabase_anon_key: str | None = None
+    supabase_service_role_key: str | None = None
 
 
 @lru_cache(maxsize=1)
