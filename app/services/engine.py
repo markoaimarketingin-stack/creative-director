@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import re
 from datetime import UTC, datetime
 
@@ -16,6 +17,7 @@ from app.models import (
 )
 from app.providers.groq_llm import GroqLLMProvider
 from app.providers.nanobanana import NanoBananaClient
+from app.services.database import CampaignDatabase
 from app.services.generators import AdCopyGenerator, HookGenerator, MessagingAngleGenerator, VisualConceptGenerator
 from app.services.scoring import CreativeScoringService
 from app.services.storage import CampaignStorage
@@ -32,6 +34,7 @@ class CreativeDirectorEngine:
         nanobanana_client: NanoBananaClient,
         scoring_service: CreativeScoringService,
         storage: CampaignStorage,
+        database: CampaignDatabase | None = None,
     ) -> None:
         self._hook_generator = hook_generator
         self._angle_generator = angle_generator
@@ -40,6 +43,7 @@ class CreativeDirectorEngine:
         self._nanobanana_client = nanobanana_client
         self._scoring_service = scoring_service
         self._storage = storage
+        self._database = database
 
     async def generate_campaign(self, payload: CreativeInput) -> CampaignPackage:
         hooks_task = asyncio.create_task(self._hook_generator.generate(payload))
@@ -97,6 +101,10 @@ class CreativeDirectorEngine:
         )
         output_directory = self._storage.save_package(package)
         package.output_directory = output_directory
+
+        if self._database:
+            self._database.save_campaign(package)
+
         return package
 
     def get_top_creatives(self, *, limit: int, platform: Platform | None):
@@ -160,6 +168,7 @@ class ServiceContainer:
         llm = GroqLLMProvider(settings)
         nanobanana = NanoBananaClient(settings)
         storage = CampaignStorage(settings)
+        database = CampaignDatabase(settings)
 
         self.engine = CreativeDirectorEngine(
             hook_generator=HookGenerator(llm),
@@ -169,6 +178,7 @@ class ServiceContainer:
             nanobanana_client=nanobanana,
             scoring_service=CreativeScoringService(),
             storage=storage,
+            database=database,
         )
         self._closables = [llm, nanobanana]
 
@@ -176,7 +186,9 @@ class ServiceContainer:
         for resource in self._closables:
             close_method = getattr(resource, "aclose", None)
             if callable(close_method):
-                await close_method()
+                result = close_method()
+                if inspect.isawaitable(result):
+                    await result
 
 
 def slugify(value: str) -> str:
