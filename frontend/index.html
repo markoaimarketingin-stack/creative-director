@@ -1,0 +1,104 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Creative Director Engine</title>
+  <link rel="stylesheet" href="/frontend/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">M</div><div class="brand-name">Marko AI</div></div>
+      <p class="nav-label">Orchestrator</p>
+      <button class="nav-item active" id="dashboard-nav" type="button"><span class="nav-icon">CD</span><span>Creative Director</span></button>
+      <p class="nav-label">Specialist Agents</p>
+      <button class="nav-item specialist" data-agent-tab="hooks" type="button"><span class="nav-icon">HG</span><span>Hook Generator</span></button>
+      <button class="nav-item specialist" data-agent-tab="angles" type="button"><span class="nav-icon">AS</span><span>Angle Strategist</span></button>
+      <button class="nav-item specialist" data-agent-tab="copy" type="button"><span class="nav-icon">CA</span><span>Copy Architect</span></button>
+      <button class="nav-item specialist" data-agent-tab="concepts" type="button"><span class="nav-icon">VP</span><span>Visual Planner</span></button>
+      <p class="nav-label">Analysis</p>
+      <a class="nav-item" href="/top-creatives"><span class="nav-icon">EX</span><span>Execution History</span></a>
+      <div class="user-row"><div class="user-avatar">CO</div><div><div class="user-name">Creative Ops</div><div class="user-role">Workspace</div></div></div>
+    </aside>
+    <section class="main-panel">
+      <div class="canvas">
+        <section class="hero" id="hero-card">
+          <div class="hero-head">
+            <h1>Strategy Dashboard</h1>
+            <div class="dashboard-actions">
+              <button class="top-pill" type="button">Knowledge Base</button>
+              <button class="top-pill" type="button">Train Model</button>
+            </div>
+          </div>
+          <p class="subtitle">Generate and monitor your AI-powered creative strategy.</p>
+          <section class="engine-strip">
+            <div><h2>AI Growth Strategy Engine</h2><p>Run the full pipeline to generate hooks, angles, scored copy, and visual concepts.</p></div>
+            <button id="hero-generate" class="primary-btn" type="button">Generate Strategy</button>
+          </section>
+          <section class="form-card">
+            <div class="form-grid">
+              <label class="field"><span>Brand Name</span><input id="f-brand" type="text" value="Marko AI"></label>
+              <label class="field"><span>Platform</span><select id="f-platform"><option value="meta">Meta</option><option value="google">Google</option><option value="tiktok">TikTok</option></select></label>
+              <label class="field"><span>Objective</span><select id="f-objective"><option value="conversions">Conversions</option><option value="traffic">Traffic</option><option value="awareness">Awareness</option></select></label>
+              <label class="field"><span>Tone</span><select id="f-tone"><option value="premium">Premium</option><option value="casual">Casual</option><option value="bold">Bold</option><option value="friendly">Friendly</option><option value="urgent">Urgent</option></select></label>
+              <label class="field span-2"><span>Product Description</span><textarea id="f-desc">AI ad tool that generates hooks, ad copy, platform-specific strategy, and creative directions for founders.</textarea></label>
+              <label class="field span-2"><span>Target Audience</span><input id="f-audience" type="text" value="Startup founders and growth marketers who run paid acquisition in-house"></label>
+              <label class="field span-2"><span>Key Benefits (comma separated)</span><input id="f-benefits" type="text" value="Launch more ad variations in minutes, Generate sharper hooks for cold traffic"></label>
+              <label class="field"><span>Competitors (comma separated)</span><input id="f-competitors" type="text" value="Jasper, Copy.ai"></label>
+              <label class="field"><span>Visual Style</span><input id="f-visual" type="text" value="cinematic SaaS ads with founder energy"></label>
+            </div>
+            <div class="count-grid">
+              <label class="count-card"><span>Hooks</span><input id="f-hooks" type="number" value="10" min="10" max="20"></label>
+              <label class="count-card"><span>Angles</span><input id="f-angles" type="number" value="3" min="3" max="6"></label>
+              <label class="count-card"><span>Copy variants</span><input id="f-copy" type="number" value="5" min="5" max="10"></label>
+              <label class="count-card"><span>Concepts</span><input id="f-concepts" type="number" value="2" min="1" max="4"></label>
+            </div>
+          </section>
+        </section>
+        <section class="loading-card hidden" id="loading-panel"><h2>Generating Campaign</h2><p>Your hooks, angles, copy, and concepts are being prepared.</p><div class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></div></section>
+        <section class="results-card hidden" id="results-panel">
+          <header class="results-head"><div><h2 id="results-title">Campaign Output</h2><p id="live-status">Ready.</p></div><div class="tabs"><button class="tab active" data-tab="hooks" type="button">Hooks <span id="hooks-count">0</span></button><button class="tab" data-tab="angles" type="button">Angles <span id="angles-count">0</span></button><button class="tab" data-tab="copy" type="button">Copy <span id="copy-count">0</span></button><button class="tab" data-tab="concepts" type="button">Concepts <span id="concepts-count">0</span></button></div></header>
+          <section id="tab-hooks" class="output-tab"><div class="section-title">Generated Hooks <span id="hooks-count-large">0</span></div><div id="hooks-output" class="stack"></div></section>
+          <section id="tab-angles" class="output-tab hidden"><div class="section-title">Generated Angles <span id="angles-count-large">0</span></div><div id="angles-output" class="stack"></div></section>
+          <section id="tab-copy" class="output-tab hidden"><div class="section-title">Generated Ad Copy <span id="copy-count-large">0</span></div><div id="copy-output" class="stack"></div></section>
+          <section id="tab-concepts" class="output-tab hidden"><div class="section-title">Generated Concepts <span id="concepts-count-large">0</span></div><div id="concepts-output" class="stack"></div></section>
+        </section>
+      </div>
+    </section>
+    <aside class="chat-panel">
+      <header class="chat-header">
+        <div class="assistant-head">
+          <div class="assistant-icon">AI</div>
+          <div class="chat-headings">
+            <div class="chat-title">Creative Director Assistant</div>
+            <div class="chat-subtitle">Helps with creative generation and workflow</div>
+          </div>
+        </div>
+        <div class="chat-actions">
+          <button class="icon-btn" type="button" aria-label="Add">+</button>
+          <button class="icon-btn" type="button" aria-label="History">◷</button>
+          <button class="icon-btn" type="button" aria-label="Close">×</button>
+        </div>
+      </header>
+
+      <div class="chat-body" id="chat-body">
+        <div class="chat-row">
+          <div class="chat-avatar">AI</div>
+          <div class="chat-bubble">
+            Hi! I am the Creative Director Assistant. I can help with hooks, angles, copy, concepts, and campaign strategy.
+            <div class="meta">Assistant</div>
+          </div>
+          <div class="chat-time">Just now</div>
+        </div>
+      </div>
+
+      <footer class="chat-composer">
+        <textarea id="chat-input" rows="1" placeholder="Ask about risks, policy violations..."></textarea>
+        <button id="chat-send" type="button" aria-label="Send">Send</button>
+      </footer>
+    </aside>
+  </main>
+  <script defer src="/frontend/app.js"></script>
+</body>
+</html>
