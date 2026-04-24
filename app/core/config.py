@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "development"
 
-    output_root: Path = Field(default=Path("/tmp/output"))
+    output_root: Path = Field(default=Path("output"))
 
     groq_api_key: str | None = None
     groq_model: str = "llama-3.1-8b-instant"

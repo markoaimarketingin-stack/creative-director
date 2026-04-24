@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import binascii
 from typing import Any
 from vertexai.preview.vision_models import ImageGenerationModel, Image as VertexImage
 import vertexai
@@ -9,6 +10,8 @@ from app.models import CreativeStatus, GeneratedCreative, Platform, VisualConcep
 
 
 class VertexAIClient:
+    _MAX_REFERENCE_IMAGES = 4
+
     def __init__(self, settings: Settings) -> None:
         self._project_id = settings.vertex_ai_project_id
         self._location = settings.vertex_ai_location
@@ -54,12 +57,10 @@ class VertexAIClient:
             # Prepare context images if sample images are provided
             reference_images = []
             if sample_images:
-                for img_data in sample_images:
-                    if img_data.startswith("data:"):
-                        # Extract base64 part
-                        img_data = img_data.split(",")[1]
-                    image_bytes = base64.b64decode(img_data)
-                    reference_images.append(VertexImage(image_bytes))
+                for img_data in sample_images[: self._MAX_REFERENCE_IMAGES]:
+                    image_bytes = self._decode_sample_image(img_data)
+                    if image_bytes:
+                        reference_images.append(VertexImage(image_bytes))
 
             # Add context images to generation kwargs if supported by the model version.
             # Using loop.run_in_executor since vertexai SDK is synchronous.
@@ -71,21 +72,17 @@ class VertexAIClient:
                 "aspect_ratio": self._get_vertex_aspect_ratio(concept.aspect_ratio),
             }
 
-            # Uncomment below if using conditional parameters for image context or style overrides:
-            # if reference_images:
-            #     kwargs["reference_images"] = reference_images
-            
-            response = await loop.run_in_executor(
-                None,
-                lambda: self._model.generate_images(**kwargs)
+            response = await self._generate_with_optional_references(
+                loop=loop,
+                kwargs=kwargs,
+                reference_images=reference_images,
             )
 
             image_urls = []
-            for i, result in enumerate(response.images):
-                # Optionally upload standard bytes to storage here; mock for now
-                # In actual use, you'd save result._image_bytes to GCS or S3, then append URL
-                # For demonstration, we simply label it as a generated local stub
-                image_urls.append(f"vertex_generated_{concept.concept_id}_{i}.png")
+            for result in getattr(response, "images", []):
+                data_url = self._vertex_image_to_data_url(result)
+                if data_url:
+                    image_urls.append(data_url)
             
             if image_urls:
                 return GeneratedCreative(
@@ -96,7 +93,11 @@ class VertexAIClient:
                     prompt=concept.generation_prompt,
                     image_urls=image_urls,
                     video_urls=[],
-                    raw_response={"urls": image_urls},
+                    raw_response={
+                        "urls": image_urls,
+                        "reference_images_used": bool(reference_images),
+                        "reference_image_count": len(reference_images),
+                    },
                 )
             
             last_error = "Vertex AI response did not include media."
@@ -114,6 +115,78 @@ class VertexAIClient:
     def _get_vertex_aspect_ratio(self, ratio_str: str) -> str:
         # Map generic like "16:9" to Vertex AI specific format (e.g. "16:9")
         return ratio_str
+
+    async def _generate_with_optional_references(
+        self,
+        *,
+        loop: asyncio.AbstractEventLoop,
+        kwargs: dict[str, Any],
+        reference_images: list[VertexImage],
+    ) -> Any:
+        if not reference_images:
+            return await loop.run_in_executor(
+                None,
+                lambda: self._model.generate_images(**kwargs),
+            )
+
+        reference_kwargs = {**kwargs, "reference_images": reference_images}
+        try:
+            return await loop.run_in_executor(
+                None,
+                lambda: self._model.generate_images(**reference_kwargs),
+            )
+        except TypeError:
+            # Older SDK/model combinations may not support reference_images.
+            return await loop.run_in_executor(
+                None,
+                lambda: self._model.generate_images(**kwargs),
+            )
+
+    def _decode_sample_image(self, image_data: str) -> bytes | None:
+        normalized = image_data.strip()
+        if normalized.startswith("data:"):
+            parts = normalized.split(",", 1)
+            if len(parts) != 2:
+                return None
+            normalized = parts[1]
+        if not normalized:
+            return None
+        try:
+            return base64.b64decode(normalized, validate=True)
+        except Exception:
+            return None
+
+    def _vertex_image_to_data_url(self, image_obj: Any) -> str | None:
+        image_bytes = self._extract_image_bytes(image_obj)
+        if not image_bytes:
+            return None
+        encoded = base64.b64encode(image_bytes).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
+
+    def _extract_image_bytes(self, image_obj: Any) -> bytes | None:
+        direct_bytes = getattr(image_obj, "_image_bytes", None)
+        if isinstance(direct_bytes, bytes) and direct_bytes:
+            return direct_bytes
+
+        to_bytes = getattr(image_obj, "to_bytes", None)
+        if callable(to_bytes):
+            try:
+                value = to_bytes()
+                if isinstance(value, bytes) and value:
+                    return value
+            except Exception:
+                pass
+
+        as_base64 = getattr(image_obj, "_as_base64_string", None)
+        if callable(as_base64):
+            try:
+                value = as_base64()
+                if isinstance(value, str) and value.strip():
+                    return base64.b64decode(value, validate=True)
+            except (ValueError, binascii.Error):
+                pass
+
+        return None
 
     async def aclose(self) -> None:
         pass

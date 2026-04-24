@@ -1,4 +1,4 @@
-const byId = (id) => document.getElementById(id);
+﻿const byId = (id) => document.getElementById(id);
 const chatBody = byId("chat-body");
 const chatInput = byId("chat-input");
 const chatSend = byId("chat-send");
@@ -12,6 +12,11 @@ const hooksOutput = byId("hooks-output");
 const anglesOutput = byId("angles-output");
 const copyOutput = byId("copy-output");
 const conceptsOutput = byId("concepts-output");
+const sampleInput = byId("f-samples");
+const sampleHint = byId("f-samples-hint");
+
+const MAX_SAMPLE_IMAGES = 4;
+const MAX_SAMPLE_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
 const countTargets = {
   hooks: [byId("hooks-count"), byId("hooks-count-large")],
@@ -43,6 +48,12 @@ async function getBase64(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = (error) => reject(error);
   });
+}
+
+function setSampleHint(message, bad = false) {
+  if (!sampleHint) return;
+  sampleHint.textContent = message;
+  sampleHint.style.color = bad ? "#b42318" : "#575757";
 }
 
 function showDashboard() {
@@ -227,17 +238,31 @@ function wireEvents() {
       sample_images: []
     };
 
-    const sampleFiles = byId("f-samples").files;
+      const sampleFiles = sampleInput ? sampleInput.files : [];
     if (sampleFiles.length > 0) {
         setStatus("Processing upload images...");
-        for (const file of sampleFiles) {
-            try {
-                const b64 = await getBase64(file);
-                payload.sample_images.push(b64);
-            } catch (e) {
-                console.error("Error reading file", e);
+        const selected = Array.from(sampleFiles).slice(0, MAX_SAMPLE_IMAGES);
+        for (const file of selected) {
+          try {
+            if (!file.type.startsWith("image/")) {
+              continue;
             }
+            if (file.size > MAX_SAMPLE_IMAGE_SIZE_BYTES) {
+              continue;
+            }
+            const b64 = await getBase64(file);
+            payload.sample_images.push(b64);
+          } catch (e) {
+            console.error("Error reading file", e);
+          }
         }
+
+        setSampleHint(
+          payload.sample_images.length
+          ? `Using ${payload.sample_images.length} reference image(s) for generation.`
+          : "No valid sample images selected. Using text-only generation.",
+          payload.sample_images.length === 0
+        );
     }
 
     if (!payload.brand_name || !payload.product_description) {
@@ -264,6 +289,35 @@ function wireEvents() {
       showDashboard();
     }
   });
+
+  if (sampleInput) {
+    sampleInput.addEventListener("change", () => {
+      const files = Array.from(sampleInput.files || []);
+      if (!files.length) {
+        setSampleHint("Optional. Up to 4 images, max 5MB each, used as visual references for Vertex AI.");
+        return;
+      }
+
+      if (files.length > MAX_SAMPLE_IMAGES) {
+        setSampleHint(`Selected ${files.length} files. Only first ${MAX_SAMPLE_IMAGES} will be used.`, true);
+        return;
+      }
+
+      const oversized = files.some((f) => f.size > MAX_SAMPLE_IMAGE_SIZE_BYTES);
+      if (oversized) {
+        setSampleHint("One or more images are larger than 5MB and will be ignored.", true);
+        return;
+      }
+
+      const invalidType = files.some((f) => !f.type.startsWith("image/"));
+      if (invalidType) {
+        setSampleHint("Only image files are accepted.", true);
+        return;
+      }
+
+      setSampleHint(`Selected ${files.length} sample image(s).`);
+    });
+  }
 
 }
 
