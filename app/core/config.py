@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     nanobanana_poll_attempts: int = 8
     nanobanana_poll_interval_seconds: float = 4.0
 
+    vertex_ai_project_id: str | None = None
+    vertex_ai_location: str = "us-central1"
+    vertex_ai_image_model: str = "imagen-3.0-generate-001"
+
     storage_backend: str = "local"
     s3_bucket_name: str | None = None
     s3_region: str | None = None

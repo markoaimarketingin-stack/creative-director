@@ -9,3 +9,9 @@ services:
         sync: false
       - key: NANOBANANA_API_KEY
         sync: false
+      - key: VERTEX_AI_PROJECT_ID
+        sync: false
+      - key: VERTEX_AI_LOCATION
+        sync: false
+      - key: VERTEX_AI_IMAGE_MODEL
+        sync: false

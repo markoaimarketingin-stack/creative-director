@@ -1,4 +1,4 @@
-﻿const byId = (id) => document.getElementById(id);
+const byId = (id) => document.getElementById(id);
 const chatBody = byId("chat-body");
 const chatInput = byId("chat-input");
 const chatSend = byId("chat-send");
@@ -34,6 +34,15 @@ function esc(v) {
 function setStatus(msg, bad = false) {
   liveStatus.textContent = msg;
   liveStatus.style.color = bad ? "#b42318" : "#575757";
+}
+
+async function getBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = (error) => reject(error);
+  });
 }
 
 function showDashboard() {
@@ -104,6 +113,8 @@ function renderAll(data) {
   const angles = data.angles || [];
   const copies = [...(data.ad_copies || [])].sort((a, b) => (b.total_score ?? -1) - (a.total_score ?? -1));
   const concepts = data.visual_concepts || [];
+  const generated = data.generated_creatives || [];
+  const genMap = generated.reduce((acc, x) => ({ ...acc, [x.concept_id]: x }), {});
 
   setCount("hooks", hooks.length);
   setCount("angles", angles.length);
@@ -115,7 +126,21 @@ function renderAll(data) {
   list(hooksOutput, hooks, (x) => `<div class="card"><h3>${esc(x.type)}</h3><p>${esc(x.text)}</p><p>${esc(x.rationale)}</p></div>`);
   list(anglesOutput, angles, (x) => `<div class="card"><h3>${esc(x.name)}</h3><p>${esc(x.description)}</p><p>Emotion: ${esc(x.target_emotion)} | Use case: ${esc(x.use_case)}</p></div>`);
   list(copyOutput, copies, (x) => `<div class="card"><h3>${esc(x.headline)}</h3><p>${esc(x.primary_text)}</p><p>CTA: ${esc(x.cta)} | Hook: ${esc(x.hook_text)}</p><div class="mono">Score: ${esc(x.total_score ?? "-")} | Rank: ${esc(x.score_rank ?? "-")} | Angle: ${esc(x.angle_name)}</div></div>`);
-  list(conceptsOutput, concepts, (x) => `<div class="card"><h3>${esc(x.concept_id)} | ${esc(x.aspect_ratio)} | ${esc(x.media_type)}</h3><p>${esc(x.scene_description)}</p><div class="mono">${esc(x.generation_prompt)}</div></div>`);
+  list(conceptsOutput, concepts, (x) => {
+    const gen = genMap[x.concept_id] || {};
+    const imgs = (gen.image_urls || []).map(url => `<img src="${url}" class="concept-img" alt="Generated concept" onerror="this.style.display='none'">`).join("");
+    const error = gen.error ? `<div class="error-msg">Error: ${esc(gen.error)}</div>` : "";
+    
+    return `
+      <div class="card">
+        <h3>${esc(x.concept_id)} | ${esc(x.aspect_ratio)} | ${esc(x.media_type)}</h3>
+        ${imgs}
+        ${error}
+        <p>${esc(x.scene_description)}</p>
+        <div class="mono">${esc(x.generation_prompt)}</div>
+      </div>
+    `;
+  });
 }
 
 function appendChat(role, text) {
@@ -198,8 +223,22 @@ function wireEvents() {
       hook_count: parseInt(byId("f-hooks").value, 10) || 10,
       angle_count: parseInt(byId("f-angles").value, 10) || 3,
       copy_count: parseInt(byId("f-copy").value, 10) || 5,
-      concept_count: parseInt(byId("f-concepts").value, 10) || 2
+      concept_count: parseInt(byId("f-concepts").value, 10) || 2,
+      sample_images: []
     };
+
+    const sampleFiles = byId("f-samples").files;
+    if (sampleFiles.length > 0) {
+        setStatus("Processing upload images...");
+        for (const file of sampleFiles) {
+            try {
+                const b64 = await getBase64(file);
+                payload.sample_images.push(b64);
+            } catch (e) {
+                console.error("Error reading file", e);
+            }
+        }
+    }
 
     if (!payload.brand_name || !payload.product_description) {
       alert("Please fill in at least Brand Name and Product Description.");

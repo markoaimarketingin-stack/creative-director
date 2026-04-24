@@ -47,6 +47,7 @@ class CreativeInput(BaseModel):
     key_benefits: list[str] = Field(..., min_length=1)
     competitors: list[str] = Field(default_factory=list)
     visual_style: str | None = None
+    sample_images: list[str] = Field(default_factory=list)
 
     campaign_name: str | None = None
     hook_count: int = Field(default=15, ge=10, le=20)
