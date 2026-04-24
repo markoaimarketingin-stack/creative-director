@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     groq_retry_base_delay_seconds: float = 1.5
     groq_temperature: float = 0.2
 
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-1.5-pro"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/models"
+
     nanobanana_api_key: str | None = None
     nanobanana_base_url: str = "https://www.nananobanana.com/api/v1"
     nanobanana_default_model: str = "nano-banana"

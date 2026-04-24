@@ -24,6 +24,9 @@ class GroqLLMProvider:
         self._max_retries = max(0, settings.groq_max_retries)
         self._retry_base_delay_seconds = max(0.1, settings.groq_retry_base_delay_seconds)
         self._temperature = settings.groq_temperature
+        self._gemini_api_key = settings.gemini_api_key
+        self._gemini_model = settings.gemini_model
+        self._gemini_base_url = settings.gemini_base_url.rstrip("/")
         self._client: httpx.AsyncClient | None = None
 
     async def structured_completion(
@@ -45,13 +48,15 @@ class GroqLLMProvider:
         instructions: str,
         user_prompt: str,
     ) -> dict[str, Any]:
-        if not self._api_key:
-            raise ValueError("GROQ_API_KEY is not configured.")
+        if not self._api_key and not self._gemini_api_key:
+            raise ValueError("Neither GROQ_API_KEY nor GEMINI_API_KEY is configured.")
 
         errors: list[str] = []
         models = [self._model, *self._fallback_models]
 
         for model_name in models:
+            if not self._api_key:
+                break
             try:
                 return await self._structured_completion_with_model(
                     model_name=model_name,
@@ -60,6 +65,15 @@ class GroqLLMProvider:
                 )
             except RuntimeError as exc:
                 errors.append(f"{model_name}: {exc}")
+
+        if self._gemini_api_key:
+            try:
+                return await self._structured_completion_with_gemini(
+                    instructions=instructions,
+                    user_prompt=user_prompt,
+                )
+            except RuntimeError as exc:
+                errors.append(f"gemini ({self._gemini_model}): {exc}")
 
         raise RuntimeError(" | ".join(errors))
 
@@ -132,6 +146,69 @@ class GroqLLMProvider:
             return payload
 
         raise RuntimeError(f"Groq request exhausted retries for model {model_name}.")
+
+    async def _structured_completion_with_gemini(
+        self,
+        *,
+        instructions: str,
+        user_prompt: str,
+    ) -> dict[str, Any]:
+        client = self._get_client()
+        url = f"{self._gemini_base_url}/{self._gemini_model}:generateContent"
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await client.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    params={"key": self._gemini_api_key},
+                    json={
+                        "system_instruction": {
+                            "parts": [{"text": instructions}]
+                        },
+                        "contents": [{
+                            "parts": [{"text": user_prompt}]
+                        }],
+                        "generationConfig": {
+                            "temperature": self._temperature,
+                            "response_mime_type": "application/json"
+                        }
+                    },
+                )
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                detail = exc.response.text[:500]
+                if status_code == 429 and attempt < self._max_retries:
+                    await sleep(self._retry_delay_seconds(attempt))
+                    continue
+                raise RuntimeError(f"Gemini API error {status_code}: {detail}") from exc
+            except httpx.HTTPError as exc:
+                if attempt < self._max_retries:
+                    await sleep(self._retry_delay_seconds(attempt))
+                    continue
+                raise RuntimeError(f"Gemini connection error: {exc}") from exc
+
+            body = response.json()
+            try:
+                content = body["candidates"][0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise RuntimeError(f"Gemini returned an unexpected response payload: {body}") from exc
+
+            if not isinstance(content, str) or not content.strip():
+                raise RuntimeError("Gemini returned no structured result.")
+
+            try:
+                payload = json.loads(content)
+            except json.JSONDecodeError as exc:
+                preview = content[:500]
+                raise RuntimeError(f"Gemini returned invalid JSON: {preview}") from exc
+
+            if not isinstance(payload, dict):
+                raise RuntimeError("Gemini returned JSON, but not an object payload.")
+            return payload
+
+        raise RuntimeError(f"Gemini request exhausted retries for model {self._gemini_model}.")
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
