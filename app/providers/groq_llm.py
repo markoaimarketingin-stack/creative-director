@@ -141,6 +141,9 @@ class GroqLLMProvider:
                 preview = content[:500]
                 raise RuntimeError(f"Groq returned invalid JSON: {preview}") from exc
 
+            if isinstance(payload, list):
+                payload = {"items": payload}
+
             if not isinstance(payload, dict):
                 raise RuntimeError("Groq returned JSON, but not an object payload.")
             return payload
@@ -203,6 +206,9 @@ class GroqLLMProvider:
             except json.JSONDecodeError as exc:
                 preview = content[:500]
                 raise RuntimeError(f"Gemini returned invalid JSON: {preview}") from exc
+
+            if isinstance(payload, list):
+                payload = {"items": payload}
 
             if not isinstance(payload, dict):
                 raise RuntimeError("Gemini returned JSON, but not an object payload.")
