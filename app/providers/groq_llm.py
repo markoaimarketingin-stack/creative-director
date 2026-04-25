@@ -167,7 +167,12 @@ class GroqLLMProvider:
                     params={"key": self._gemini_api_key},
                     json={
                         "system_instruction": {
-                            "parts": [{"text": instructions}]
+                            "parts": [{"text": (
+                                f"{instructions}\n\n"
+                                "Return only valid JSON matching the requested schema. "
+                                "Prefer the schema's exact field names and enum values. "
+                                "Do not include markdown fences or explanatory text."
+                            )}]
                         },
                         "contents": [{
                             "parts": [{"text": user_prompt}]

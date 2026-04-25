@@ -8,9 +8,18 @@ def normalize_hook_set(payload: dict[str, Any]) -> HookSet:
     hooks: list[Hook] = []
     for item in items:
         if not isinstance(item, dict):
+            text = _as_text(item)
+            if text:
+                hooks.append(
+                    Hook(
+                        type=HookType.CURIOSITY,
+                        text=text,
+                        rationale="Built as a direct-response hook for paid acquisition testing.",
+                    )
+                )
             continue
-        hook_type = _normalize_hook_type(item.get("type"))
-        text = _as_text(item.get("text") or item.get("hook") or item.get("headline"))
+        hook_type = _normalize_hook_type(item.get("type") or item.get("hook_type"))
+        text = _as_text(item.get("text") or item.get("hook") or item.get("headline") or item.get("hook_text"))
         rationale = _as_text(item.get("rationale") or item.get("reason") or item.get("description"))
         if not text:
             continue
@@ -22,6 +31,7 @@ def normalize_hook_set(payload: dict[str, Any]) -> HookSet:
             )
         )
     if not hooks:
+        print(f"[DEBUG] _extract_items logic failed. Payload was: {payload}")
         raise RuntimeError("Groq returned no usable hooks.")
     return HookSet(hooks=hooks)
 
@@ -31,9 +41,19 @@ def normalize_angle_set(payload: dict[str, Any]) -> MessagingAngleSet:
     angles: list[MessagingAngle] = []
     for item in items:
         if not isinstance(item, dict):
+            text = _as_text(item)
+            if text:
+                angles.append(
+                    MessagingAngle(
+                        name="Brand Angle",
+                        description=text,
+                        target_emotion="confidence",
+                        use_case="Paid acquisition campaigns",
+                    )
+                )
             continue
-        name = _as_text(item.get("name") or item.get("title") or item.get("angle_name"))
-        description = _as_text(item.get("description") or item.get("summary"))
+        name = _as_text(item.get("name") or item.get("title") or item.get("angle_name") or item.get("messaging_angle"))
+        description = _as_text(item.get("description") or item.get("summary") or item.get("angle_description"))
         target_emotion = _as_text(item.get("target_emotion") or item.get("emotion")) or "confidence"
         use_case = _as_text(item.get("use_case") or item.get("best_use_case") or item.get("best_for")) or "Paid acquisition campaigns"
         if not name or not description:
@@ -124,6 +144,10 @@ def _extract_items(payload: dict[str, Any], *, primary_keys: tuple[str, ...]) ->
 
     if all(isinstance(value, dict) for value in payload.values()) and payload:
         return list(payload.values())
+
+    for value in payload.values():
+        if isinstance(value, list):
+            return value
 
     return []
 
