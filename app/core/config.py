@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     vertex_ai_location: str = "us-central1"
     vertex_ai_image_model: str = "imagen-3.0-generate-001"
 
+    hf_api_key: str | None = None
+    hf_image_model: str = "stabilityai/stable-diffusion-xl-base-1.0"
+
     storage_backend: str = "local"
     s3_bucket_name: str | None = None
     s3_region: str | None = None

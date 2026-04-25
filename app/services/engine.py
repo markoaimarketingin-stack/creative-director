@@ -16,6 +16,7 @@ from app.models import (
     VisualConcept,
 )
 from app.providers.groq_llm import GroqLLMProvider
+from app.providers.huggingface import HuggingFaceClient
 from app.providers.nanobanana import NanoBananaClient
 from app.providers.vertex_ai import VertexAIClient
 from app.services.database import CampaignDatabase
@@ -37,6 +38,7 @@ class CreativeDirectorEngine:
         storage: CampaignStorage,
         database: CampaignDatabase | None = None,
         vertex_client: VertexAIClient | None = None,
+        hf_client: HuggingFaceClient | None = None,
     ) -> None:
         self._hook_generator = hook_generator
         self._angle_generator = angle_generator
@@ -44,6 +46,7 @@ class CreativeDirectorEngine:
         self._visual_concept_generator = visual_concept_generator
         self._nanobanana_client = nanobanana_client
         self._vertex_client = vertex_client
+        self._hf_client = hf_client
         self._scoring_service = scoring_service
         self._storage = storage
         self._database = database
@@ -57,13 +60,33 @@ class CreativeDirectorEngine:
         concept_task = asyncio.create_task(self._visual_concept_generator.generate(payload, hooks, angles))
         ad_copies, visual_concepts = await asyncio.gather(ad_copy_task, concept_task)
 
+        generated_creatives = []
         if self._vertex_client and getattr(self._vertex_client, "_project_id", None):
             generated_creatives = await self._vertex_client.generate_batch(
                 visual_concepts,
                 platform=payload.platform,
                 sample_images=payload.sample_images,
             )
-        else:
+
+        if not generated_creatives or any(c.status in (CreativeStatus.FAILED, CreativeStatus.SKIPPED) for c in generated_creatives):
+            if self._nanobanana_client and getattr(self._nanobanana_client, "_api_key", None):
+                fallback_creatives = await self._nanobanana_client.generate_batch(
+                    visual_concepts,
+                    platform=payload.platform,
+                )
+                if fallback_creatives:
+                    generated_creatives = fallback_creatives
+
+        if not generated_creatives or any(c.status in (CreativeStatus.FAILED, CreativeStatus.SKIPPED) for c in generated_creatives):
+            if getattr(self, "_hf_client", None) and getattr(self._hf_client, "_api_key", None):
+                fallback_creatives = await self._hf_client.generate_batch(
+                    visual_concepts,
+                    platform=payload.platform,
+                )
+                if fallback_creatives:
+                    generated_creatives = fallback_creatives
+
+        if not generated_creatives:
             generated_creatives = await self._nanobanana_client.generate_batch(
                 visual_concepts,
                 platform=payload.platform,
@@ -181,6 +204,7 @@ class ServiceContainer:
         storage = CampaignStorage(settings)
         database = CampaignDatabase(settings)
         vertex_client = VertexAIClient(settings)
+        hf_client = HuggingFaceClient(settings)
 
         self.engine = CreativeDirectorEngine(
             hook_generator=HookGenerator(llm),
@@ -192,8 +216,9 @@ class ServiceContainer:
             storage=storage,
             database=database,
             vertex_client=vertex_client,
+            hf_client=hf_client,
         )
-        self._closables = [llm, nanobanana, vertex_client]
+        self._closables = [llm, nanobanana, vertex_client, hf_client]
 
     async def aclose(self) -> None:
         for resource in self._closables:
