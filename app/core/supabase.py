@@ -1,21 +1,19 @@
-from supabase import create_client, Client
+import psycopg2
+from psycopg2.extensions import connection
 from app.core.config import Settings
 
 
-def get_supabase_client(settings: Settings) -> Client | None:
+def get_db_connection(settings: Settings) -> connection | None:
     url = settings.supabase_url
-    key = settings.supabase_service_role_key
     
-    if not url or not key:
-        return None
-        
-    # Skip if they look like placeholders from .env.example
-    if "your-project" in url or "your_supabase" in key:
-        print("[INFO] Supabase placeholders detected. Skipping database initialization.")
+    if not url or not url.startswith("postgresql://"):
         return None
         
     try:
-        return create_client(url, key)
+        conn = psycopg2.connect(url)
+        # Ensure changes are committed automatically or handle it manually
+        conn.autocommit = True
+        return conn
     except Exception as exc:
-        print(f"[ERROR] Failed to initialize Supabase client: {exc}")
+        print(f"[ERROR] Failed to connect to PostgreSQL database: {exc}")
         return None
