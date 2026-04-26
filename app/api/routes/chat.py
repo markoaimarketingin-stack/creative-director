@@ -9,11 +9,12 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     context: dict | None = None
-
+    session_id: str | None = None
 
 class ChatResponse(BaseModel):
     reply: str
     context: dict | None = None
+    session_id: str | None = None
 
 
 
@@ -23,6 +24,10 @@ class ChatResponse(BaseModel):
 @router.post("/chat-assistant", response_model=ChatResponse)
 async def chat_assistant(request: ChatRequest):
     settings = get_settings()
+    from app.services.database import ChatDatabase
+    import uuid
+    chat_db = ChatDatabase(settings)
+    session_id = request.session_id or str(uuid.uuid4())
 
     context = request.context or {}
     history = context.get("history", [])
@@ -61,34 +66,98 @@ Rules:
         messages.append(entry)
     messages.append({"role": "user", "content": request.message})
 
-    try:
-        async with httpx.AsyncClient(timeout=settings.groq_timeout_seconds) as client:
-            response = await client.post(
-                f"{settings.groq_base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.groq_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.groq_model,
-                    "messages": messages,
-                    "max_tokens": 512,
-                    "temperature": 0.7,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            reply = data["choices"][0]["message"]["content"].strip()
+    error_msgs = []
+    reply = None
 
-            new_history = history + [
-                {"role": "user", "content": request.message},
-                {"role": "assistant", "content": reply},
-            ]
+    if settings.groq_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=settings.groq_timeout_seconds) as client:
+                response = await client.post(
+                    f"{settings.groq_base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.groq_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.groq_model,
+                        "messages": messages,
+                        "max_tokens": 512,
+                        "temperature": 0.7,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                reply = data["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            error_msgs.append(f"Groq error: {str(e)}")
 
-            return ChatResponse(reply=reply, context={"history": new_history})
+    if not reply and settings.gemini_api_key:
+        try:
+            gemini_messages = []
+            system_instruction = ""
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_instruction = msg["content"]
+                elif msg["role"] == "user":
+                    gemini_messages.append({"role": "user", "parts": [{"text": msg["content"]}]})
+                elif msg["role"] == "assistant":
+                    gemini_messages.append({"role": "model", "parts": [{"text": msg["content"]}]})
+            
+            async with httpx.AsyncClient(timeout=settings.groq_timeout_seconds) as client:
+                url = f"{settings.gemini_base_url}/{settings.gemini_model}:generateContent"
+                payload = {
+                    "contents": gemini_messages,
+                    "generationConfig": {
+                        "temperature": 0.7,
+                        "maxOutputTokens": 512,
+                    }
+                }
+                if system_instruction:
+                    payload["system_instruction"] = {
+                        "parts": [{"text": system_instruction}]
+                    }
 
-    except Exception as e:
+                response = await client.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    params={"key": settings.gemini_api_key},
+                    json=payload
+                )
+                response.raise_for_status()
+                data = response.json()
+                reply = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except Exception as e:
+            error_msgs.append(f"Gemini error: {str(e)}")
+
+    if reply:
+        chat_db.save_message(session_id, "user", request.message)
+        chat_db.save_message(session_id, "assistant", reply)
+
+        new_history = history + [
+            {"role": "user", "content": request.message},
+            {"role": "assistant", "content": reply},
+        ]
+        return ChatResponse(reply=reply, context={"history": new_history}, session_id=session_id)
+    else:
+        errors = " | ".join(error_msgs) or "No API keys configured."
         return ChatResponse(
-            reply=f"Sorry, I couldn't connect to the AI backend. Error: {str(e)}",
+            reply=f"Sorry, I couldn't connect to the AI backend. Error: {errors}",
             context=request.context,
+            session_id=session_id
         )
+
+@router.get("/chat-history/{session_id}")
+async def get_chat_history(session_id: str):
+    settings = get_settings()
+    from app.services.database import ChatDatabase
+    chat_db = ChatDatabase(settings)
+    history = chat_db.get_history(session_id)
+    return {"session_id": session_id, "history": history}
+
+@router.get("/chat-sessions")
+async def get_chat_sessions():
+    settings = get_settings()
+    from app.services.database import ChatDatabase
+    chat_db = ChatDatabase(settings)
+    sessions = chat_db.get_sessions()
+    return {"sessions": sessions}

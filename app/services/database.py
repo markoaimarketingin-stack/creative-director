@@ -4,6 +4,86 @@ from app.core.supabase import get_db_connection
 from app.models import CampaignPackage
 
 
+class ChatDatabase:
+    def __init__(self, settings: Settings) -> None:
+        self._conn = get_db_connection(settings)
+        self._init_db()
+
+    def _init_db(self):
+        if not self._conn:
+            return
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS chat_messages (
+                        id SERIAL PRIMARY KEY,
+                        session_id VARCHAR(255) NOT NULL,
+                        role VARCHAR(50) NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
+                """)
+        except Exception as e:
+            print(f"Chat DB Init Error: {e}")
+
+    def save_message(self, session_id: str, role: str, content: str):
+        if not self._conn:
+            return
+        import uuid
+        msg_id = str(uuid.uuid4())
+        try:
+            with self._conn.cursor() as cur:
+                # Ensure the session exists in chat_sessions table to satisfy foreign key
+                cur.execute("SELECT id FROM chat_sessions WHERE id = %s", (session_id,))
+                if not cur.fetchone():
+                    title = content[:30] + ("..." if len(content) > 30 else "") if role == "user" else "Creative Assistant Chat"
+                    cur.execute("""
+                        INSERT INTO chat_sessions (id, title)
+                        VALUES (%s, %s);
+                    """, (session_id, title))
+
+                cur.execute("""
+                    INSERT INTO chat_messages (id, session_id, role, content)
+                    VALUES (%s, %s, %s, %s);
+                """, (msg_id, session_id, role, content))
+        except Exception as e:
+            print(f"Chat DB save error: {e}")
+
+    def get_history(self, session_id: str) -> list[dict]:
+        if not self._conn:
+            return []
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute("""
+                    SELECT role, content FROM chat_messages
+                    WHERE session_id = %s
+                    ORDER BY created_at ASC;
+                """, (session_id,))
+                return [{"role": row[0], "content": row[1]} for row in cur.fetchall()]
+        except Exception as e:
+            print(f"Chat DB get error: {e}")
+            return []
+
+    def get_sessions(self) -> list[dict]:
+        if not self._conn:
+            return []
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute("""
+                    SELECT m.session_id, max(m.created_at) as last_activity, s.title
+                    FROM chat_messages m
+                    LEFT JOIN chat_sessions s ON m.session_id = s.id
+                    GROUP BY m.session_id, s.title
+                    ORDER BY last_activity DESC
+                    LIMIT 20;
+                """)
+                return [{"session_id": row[0], "last_activity": row[1].isoformat(), "title": row[2]} for row in cur.fetchall()]
+        except Exception as e:
+            print(f"Chat DB get sessions error: {e}")
+            return []
 class CampaignDatabase:
     def __init__(self, settings: Settings) -> None:
         self._conn = get_db_connection(settings)

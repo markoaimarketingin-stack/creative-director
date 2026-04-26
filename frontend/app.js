@@ -1,4 +1,4 @@
-﻿const byId = (id) => document.getElementById(id);
+const byId = (id) => document.getElementById(id);
 const chatBody = byId("chat-body");
 const chatInput = byId("chat-input");
 const chatSend = byId("chat-send");
@@ -14,6 +14,15 @@ const copyOutput = byId("copy-output");
 const conceptsOutput = byId("concepts-output");
 const sampleInput = byId("f-samples");
 const sampleHint = byId("f-samples-hint");
+const btnChatHistory = byId("btn-chat-history");
+const btnChatNew = byId("btn-chat-new");
+const btnSidebarChat = byId("btn-sidebar-chat");
+const chatHistoryPanel = byId("chat-history-panel");
+const chatSessionsList = byId("chat-sessions-list");
+const chatPanel = document.querySelector(".chat-panel");
+const historyPanel = byId("history-panel");
+const navExecutionHistory = byId("nav-execution-history");
+const historyOutput = byId("history-output");
 
 const MAX_SAMPLE_IMAGES = 4;
 const MAX_SAMPLE_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -26,6 +35,7 @@ const countTargets = {
 };
 
 let chatContext = {};
+let chatSessionId = localStorage.getItem("chat_session_id");
 
 function esc(v) {
   return String(v)
@@ -60,20 +70,35 @@ function showDashboard() {
   heroCard.classList.remove("hidden");
   loadingPanel.classList.add("hidden");
   resultsPanel.classList.add("hidden");
+  if (historyPanel) historyPanel.classList.add("hidden");
   dashboardNav.classList.add("active");
   document.querySelectorAll(".specialist").forEach((n) => n.classList.remove("active"));
+  if (navExecutionHistory) navExecutionHistory.classList.remove("active");
 }
 
 function showLoading() {
   heroCard.classList.add("hidden");
   loadingPanel.classList.remove("hidden");
   resultsPanel.classList.add("hidden");
+  if (historyPanel) historyPanel.classList.add("hidden");
 }
 
 function showResults() {
   heroCard.classList.add("hidden");
   loadingPanel.classList.add("hidden");
   resultsPanel.classList.remove("hidden");
+  if (historyPanel) historyPanel.classList.add("hidden");
+}
+
+function showHistory() {
+  heroCard.classList.add("hidden");
+  loadingPanel.classList.add("hidden");
+  resultsPanel.classList.add("hidden");
+  if (historyPanel) historyPanel.classList.remove("hidden");
+  
+  dashboardNav.classList.remove("active");
+  document.querySelectorAll(".specialist").forEach((n) => n.classList.remove("active"));
+  if (navExecutionHistory) navExecutionHistory.classList.add("active");
 }
 
 function setCount(key, value) {
@@ -173,15 +198,39 @@ async function sendChatMessage() {
     const res = await fetch("/chat-assistant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, context: chatContext })
+      body: JSON.stringify({ message, context: chatContext, session_id: chatSessionId })
     });
     const data = await res.json();
     appendChat("ai", esc(data.reply || "No response received."));
     chatContext = data.context || chatContext;
+    if (data.session_id && data.session_id !== chatSessionId) {
+      chatSessionId = data.session_id;
+      localStorage.setItem("chat_session_id", chatSessionId);
+    }
   } catch {
     appendChat("ai", "Sorry, there was an error contacting the assistant.");
   } finally {
     chatSend.disabled = false;
+  }
+}
+
+async function loadChatHistory() {
+  if (!chatSessionId) return;
+  try {
+    const res = await fetch(`/chat-history/${chatSessionId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.history && data.history.length > 0) {
+      // Clear the chat body so we don't have duplicate default messages
+      chatBody.innerHTML = '';
+      data.history.forEach(msg => {
+        appendChat(msg.role === "assistant" ? "ai" : "user", esc(msg.content));
+      });
+      // Pre-fill history into context
+      chatContext.history = data.history;
+    }
+  } catch (e) {
+    console.error("Failed to load chat history:", e);
   }
 }
 
@@ -219,6 +268,41 @@ function wireEvents() {
       activateTab(item.dataset.agentTab);
     });
   });
+
+  if (navExecutionHistory) {
+    navExecutionHistory.addEventListener("click", async () => {
+      showHistory();
+      empty(historyOutput, "Loading execution history...");
+      try {
+        const res = await fetch("/top-creatives");
+        if (!res.ok) throw new Error("Failed to load history");
+        const data = await res.json();
+        
+        if (!data.items || data.items.length === 0) {
+          empty(historyOutput, "No previous executions found.");
+          return;
+        }
+
+        historyOutput.innerHTML = data.items.map(item => {
+          const imgs = (item.image_urls || []).map(url => `<img src="${url}" class="concept-img" alt="Creative image">`).join("");
+          return `
+            <div class="card">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <h3 style="margin:0">${esc(item.campaign_name)}</h3>
+                <span class="mono">Score: ${esc(item.total_score)}</span>
+              </div>
+              <p style="margin:5px 0;"><strong>Headline:</strong> ${esc(item.headline)}</p>
+              <p style="margin:5px 0;"><strong>CTA:</strong> ${esc(item.cta)}</p>
+              <div class="mono" style="margin-bottom: 10px;">Platform: ${esc(item.platform)} | Concept: ${esc(item.concept_id)}</div>
+              ${imgs}
+            </div>
+          `;
+        }).join("");
+      } catch (e) {
+        empty(historyOutput, "Error loading execution history.");
+      }
+    });
+  }
 
   byId("hero-generate").addEventListener("click", async () => {
     const payload = {
@@ -319,8 +403,78 @@ function wireEvents() {
     });
   }
 
+  if (btnChatHistory) {
+    btnChatHistory.addEventListener("click", async () => {
+      chatHistoryPanel.classList.toggle("hidden");
+      if (!chatHistoryPanel.classList.contains("hidden")) {
+        chatSessionsList.innerHTML = '<div style="padding: 10px;">Loading...</div>';
+        try {
+          const res = await fetch("/chat-sessions");
+          if (!res.ok) {
+            chatSessionsList.innerHTML = `<div style="padding: 10px;">Error loading sessions (Status: ${res.status}). Ensure API is running.</div>`;
+            return;
+          }
+          const data = await res.json();
+          if (data.sessions && data.sessions.length > 0) {
+            const validSessions = data.sessions.filter(s => s.session_id);
+            if (validSessions.length > 0) {
+              chatSessionsList.innerHTML = validSessions.map(s => {
+                const title = s.title ? s.title : 'Session: ' + String(s.session_id).substring(0, 8);
+                return `<div class="chat-session-item" data-id="${s.session_id}" style="padding: 10px; border-bottom: 1px solid #e5e5e5; cursor: pointer; font-size: 0.9em;">
+                  <strong>${esc(title)}</strong><br>
+                  <span style="font-size: 0.8em; color: #666;">${new Date(s.last_activity).toLocaleString()}</span>
+                </div>`;
+              }).join('');
+              
+              document.querySelectorAll('.chat-session-item').forEach(item => {
+                item.addEventListener('click', () => {
+                  chatSessionId = item.dataset.id;
+                  localStorage.setItem("chat_session_id", chatSessionId);
+                  chatHistoryPanel.classList.add("hidden");
+                  loadChatHistory();
+                });
+              });
+            } else {
+              chatSessionsList.innerHTML = '<div style="padding: 10px;">No previous chats found.</div>';
+            }
+          } else {
+            chatSessionsList.innerHTML = '<div style="padding: 10px;">No previous chats found.</div>';
+          }
+        } catch (e) {
+          chatSessionsList.innerHTML = '<div style="padding: 10px;">Error loading sessions.</div>';
+        }
+      }
+    });
+  }
+
+  if (btnChatNew) {
+    btnChatNew.addEventListener("click", () => {
+      chatSessionId = null;
+      localStorage.removeItem("chat_session_id");
+      chatContext.history = [];
+      chatBody.innerHTML = `
+        <div class="chat-row">
+          <div class="chat-avatar">AI</div>
+          <div class="chat-bubble">
+            Hi! I am the Creative Director Assistant. I can help with hooks, angles, copy, concepts, and campaign strategy.
+            <div class="meta">Assistant</div>
+          </div>
+          <div class="chat-time">Just now</div>
+        </div>
+      `;
+      if (chatHistoryPanel) chatHistoryPanel.classList.add("hidden");
+    });
+  }
+
+  if (btnSidebarChat && chatPanel) {
+    btnSidebarChat.addEventListener("click", () => {
+      chatPanel.classList.remove("hidden");
+    });
+  }
+
 }
 
 resetOutputs();
 wireEvents();
 loadUiConfig();
+loadChatHistory();
