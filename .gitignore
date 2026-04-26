@@ -4,4 +4,7 @@ __pycache__/
 .env
 *.pyc
 output/
-
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
