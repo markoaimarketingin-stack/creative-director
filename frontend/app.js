@@ -1,3 +1,13 @@
+// Configuration: Change this to your Render backend URL if hosting frontend on Vercel
+// Example: const API_BASE_URL = "https://your-app.onrender.com";
+let API_BASE_URL = (
+  window.__APP_CONFIG__ &&
+  typeof window.__APP_CONFIG__.BACKEND_URL === "string" &&
+  window.__APP_CONFIG__.BACKEND_URL.trim()
+)
+  ? window.__APP_CONFIG__.BACKEND_URL.trim().replace(/\/+$/, "")
+  : "";
+
 const byId = (id) => document.getElementById(id);
 const chatBody = byId("chat-body");
 const chatInput = byId("chat-input");
@@ -195,7 +205,7 @@ async function sendChatMessage() {
   chatSend.disabled = true;
 
   try {
-    const res = await fetch("/chat-assistant", {
+    const res = await fetch(`${API_BASE_URL}/chat-assistant`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, context: chatContext, session_id: chatSessionId })
@@ -217,7 +227,7 @@ async function sendChatMessage() {
 async function loadChatHistory() {
   if (!chatSessionId) return;
   try {
-    const res = await fetch(`/chat-history/${chatSessionId}`);
+    const res = await fetch(`${API_BASE_URL}/chat-history/${chatSessionId}`);
     if (!res.ok) return;
     const data = await res.json();
     if (data.history && data.history.length > 0) {
@@ -236,9 +246,12 @@ async function loadChatHistory() {
 
 async function loadUiConfig() {
   try {
-    const res = await fetch("/ui-config");
+    const res = await fetch(`${API_BASE_URL}/ui-config`);
     const data = await res.json();
     document.title = data.app_name || "Creative Director Engine";
+    if (!API_BASE_URL && data.backend_url && typeof data.backend_url === "string") {
+      API_BASE_URL = data.backend_url.replace(/\/+$/, "");
+    }
   } catch {
     document.title = "Creative Director Engine";
   }
@@ -274,7 +287,7 @@ function wireEvents() {
       showHistory();
       empty(historyOutput, "Loading execution history...");
       try {
-        const res = await fetch("/top-creatives");
+        const res = await fetch(`${API_BASE_URL}/top-creatives`);
         if (!res.ok) throw new Error("Failed to load history");
         const data = await res.json();
         
@@ -359,7 +372,7 @@ function wireEvents() {
     setStatus("Generating campaign...");
 
     try {
-      const response = await fetch("/generate-creatives", {
+      const response = await fetch(`${API_BASE_URL}/generate-creatives`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -409,7 +422,7 @@ function wireEvents() {
       if (!chatHistoryPanel.classList.contains("hidden")) {
         chatSessionsList.innerHTML = '<div style="padding: 10px;">Loading...</div>';
         try {
-          const res = await fetch("/chat-sessions");
+          const res = await fetch(`${API_BASE_URL}/chat-sessions`);
           if (!res.ok) {
             chatSessionsList.innerHTML = `<div style="padding: 10px;">Error loading sessions (Status: ${res.status}). Ensure API is running.</div>`;
             return;

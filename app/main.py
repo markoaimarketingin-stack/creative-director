@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -21,10 +22,21 @@ async def lifespan(app: FastAPI):
     await container.aclose()
 
 settings = get_settings()
+allowed_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+if settings.frontend_url and settings.frontend_url not in allowed_origins:
+    allowed_origins.append(settings.frontend_url)
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 app.include_router(creatives_router)
 app.include_router(chat_router)
@@ -40,6 +52,8 @@ async def root() -> FileResponse:
 async def ui_config() -> dict[str, str]:
     return {
         "app_name": settings.app_name,
+        "backend_url": settings.backend_url,
+        "frontend_url": settings.frontend_url,
         "groq_status": "Connected" if settings.groq_api_key else "Missing key",
         "nanobanana_status": "Configured" if settings.nanobanana_api_key else "Unavailable",
     }

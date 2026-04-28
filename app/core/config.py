@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     app_name: str = "Creative Director Engine"
     app_version: str = "0.1.0"
     environment: str = "development"
+    backend_url: str = "http://127.0.0.1:8000"
+    frontend_url: str = "http://127.0.0.1:8000"
+    cors_origins: str = "http://127.0.0.1:8000,http://localhost:8000"
 
     output_root: Path = Field(default=Path("output"))
 
