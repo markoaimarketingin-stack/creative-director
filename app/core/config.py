@@ -51,11 +51,17 @@ class Settings(BaseSettings):
     hf_api_key: str | None = None
     hf_image_model: str = "black-forest-labs/FLUX.1-schnell"
     hf_image_model_small: str = "black-forest-labs/FLUX.1-schnell"
+    image_provider_timeout_seconds: float = 4.0
 
     storage_backend: str = "local"
     s3_bucket_name: str | None = None
     s3_region: str | None = None
     supabase_url: str | None = None
+    db_pool_min_size: int = 1
+    db_pool_max_size: int = 5
+    google_client_id: str | None = None
+    api_auth_enabled: bool = False
+    app_api_key: str | None = None
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

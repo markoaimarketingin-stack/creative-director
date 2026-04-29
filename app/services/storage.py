@@ -25,9 +25,7 @@ class CampaignStorage:
     )
 
     def save_package(self, package: CampaignPackage) -> str:
-        timestamp = package.created_at.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-        campaign_dir = self._output_root / package.campaign_slug / timestamp
-        campaign_dir.mkdir(parents=True, exist_ok=True)
+        campaign_dir = self.build_campaign_dir(package.campaign_slug, package.created_at)
 
         payloads = {
             "input.json": package.input.model_dump(mode="json"),
@@ -37,12 +35,14 @@ class CampaignStorage:
             "visual_concepts.json": [item.model_dump(mode="json") for item in package.visual_concepts],
             "creative_scores.json": [item.model_dump(mode="json") for item in package.scored_creatives],
             "creatives.json": [item.model_dump(mode="json") for item in package.creative_assets],
+            "export_rows.json": [item.model_dump(mode="json") for item in package.export_rows],
             "campaign_manifest.json": {
                 "campaign_name": package.campaign_name,
                 "campaign_slug": package.campaign_slug,
                 "created_at": package.created_at.isoformat(),
                 "platform": package.input.platform.value,
                 "objective": package.input.objective.value,
+                "brand_assets": package.brand_assets.model_dump(mode="json") if package.brand_assets else None,
                 "output_directory": str(campaign_dir),
             },
         }
@@ -53,6 +53,12 @@ class CampaignStorage:
             self._mirror_to_s3(file_path=file_path, relative_key=file_path.relative_to(self._output_root))
 
         return str(campaign_dir)
+
+    def build_campaign_dir(self, campaign_slug: str, created_at) -> Path:
+        timestamp = created_at.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+        campaign_dir = self._output_root / campaign_slug / timestamp
+        campaign_dir.mkdir(parents=True, exist_ok=True)
+        return campaign_dir
 
     def get_top_creatives(
         self,
@@ -86,6 +92,8 @@ class CampaignStorage:
                         cta=row.get("cta"),
                         image_urls=generated.get("image_urls", []),
                         video_urls=generated.get("video_urls", []),
+                        rendered_image_path=(row.get("rendered_ad") or {}).get("image_path"),
+                        preview_image_path=(row.get("preview") or {}).get("image_path"),
                         output_directory=str(creatives_file.parent),
                     )
                 )

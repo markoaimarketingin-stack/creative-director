@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Creative Director Engine</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="/frontend/styles.css?v=20260429c">
 </head>
 <body>
   <main class="app-shell">
@@ -32,10 +32,10 @@
               <button class="top-pill" type="button">Train Model</button>
             </div>
           </div>
-          <p class="subtitle">Generate and monitor your AI-powered creative strategy.</p>
+          <p class="subtitle">Generate ready-to-launch creative packages with rendered ads, previews, and export files.</p>
           <section class="engine-strip">
-            <div><h2>AI Growth Strategy Engine</h2><p>Run the full pipeline to generate hooks, angles, scored copy, and visual concepts.</p></div>
-            <button id="hero-generate" class="primary-btn" type="button">Generate Strategy</button>
+            <div><h2>Finished Ad Generation Engine</h2><p>Run the full pipeline to generate scored copy, product-grounded images, branded ads, previews, and upload-ready outputs.</p></div>
+            <button id="hero-generate" class="primary-btn" type="button">Generate Final Ads</button>
           </section>
           <section class="form-card">
             <div class="form-grid">
@@ -48,6 +48,13 @@
               <label class="field span-2"><span>Key Benefits (comma separated)</span><input id="f-benefits" type="text" value=""></label>
               <label class="field"><span>Competitors (comma separated)</span><input id="f-competitors" type="text" value=""></label>
               <label class="field"><span>Visual Style</span><input id="f-visual" type="text" value=""></label>
+              <label class="field"><span>Brand Colors (comma separated hex)</span><input id="f-brand-colors" type="text" placeholder="#111111, #F4F1EA, #E85D04"></label>
+              <label class="field"><span>Brand Fonts (comma separated paths or names)</span><input id="f-brand-fonts" type="text" placeholder="C:/Windows/Fonts/segoeuib.ttf, C:/Windows/Fonts/segoeui.ttf"></label>
+              <label class="field span-2">
+                <span>Logo Image</span>
+                <input id="f-logo" type="file" accept="image/*">
+                <small>Optional. Used for final ad rendering.</small>
+              </label>
               <label class="field span-2">
                 <span>Sample Context Images (Upload)</span>
                 <input id="f-samples" type="file" multiple accept="image/*">
@@ -58,17 +65,20 @@
               <label class="count-card"><span>Hooks</span><input id="f-hooks" type="number" value="10" min="10" max="20"></label>
               <label class="count-card"><span>Angles</span><input id="f-angles" type="number" value="3" min="3" max="6"></label>
               <label class="count-card"><span>Copy variants</span><input id="f-copy" type="number" value="5" min="5" max="10"></label>
-              <label class="count-card"><span>Concepts</span><input id="f-concepts" type="number" value="2" min="1" max="4"></label>
+              <label class="count-card"><span>Concepts</span><input id="f-concepts" type="number" value="5" min="1" max="10"></label>
             </div>
           </section>
         </section>
-        <section class="loading-card hidden" id="loading-panel"><h2>Generating Campaign</h2><p>Your hooks, angles, copy, and concepts are being prepared.</p><div class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></div></section>
+        <section class="loading-card hidden" id="loading-panel"><h2>Generating Campaign</h2><p>Your final creatives, previews, and export package are being assembled.</p><div class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></div></section>
         <section class="results-card hidden" id="results-panel">
-          <header class="results-head"><div><h2 id="results-title">Campaign Output</h2><p id="live-status">Ready.</p></div><div class="tabs"><button class="tab active" data-tab="hooks" type="button">Hooks <span id="hooks-count">0</span></button><button class="tab" data-tab="angles" type="button">Angles <span id="angles-count">0</span></button><button class="tab" data-tab="copy" type="button">Copy <span id="copy-count">0</span></button><button class="tab" data-tab="concepts" type="button">Concepts <span id="concepts-count">0</span></button></div></header>
+          <header class="results-head"><div><h2 id="results-title">Campaign Output</h2><p id="live-status">Ready.</p></div><div class="tabs"><button class="tab active" data-tab="finals" type="button">Final Ads <span id="finals-count">0</span></button><button class="tab" data-tab="previews" type="button">Previews <span id="previews-count">0</span></button><button class="tab" data-tab="hooks" type="button">Hooks <span id="hooks-count">0</span></button><button class="tab" data-tab="angles" type="button">Angles <span id="angles-count">0</span></button><button class="tab" data-tab="copy" type="button">Copy <span id="copy-count">0</span></button><button class="tab" data-tab="concepts" type="button">Concepts <span id="concepts-count">0</span></button><button class="tab" data-tab="exports" type="button">Exports <span id="exports-count">0</span></button></div></header>
+          <section id="tab-finals" class="output-tab"><div class="section-title">Rendered Ads <span id="finals-count-large">0</span></div><div id="finals-output" class="stack"></div></section>
+          <section id="tab-previews" class="output-tab hidden"><div class="section-title">Feed Previews <span id="previews-count-large">0</span></div><div id="previews-output" class="stack"></div></section>
           <section id="tab-hooks" class="output-tab"><div class="section-title">Generated Hooks <span id="hooks-count-large">0</span></div><div id="hooks-output" class="stack"></div></section>
           <section id="tab-angles" class="output-tab hidden"><div class="section-title">Generated Angles <span id="angles-count-large">0</span></div><div id="angles-output" class="stack"></div></section>
           <section id="tab-copy" class="output-tab hidden"><div class="section-title">Generated Ad Copy <span id="copy-count-large">0</span></div><div id="copy-output" class="stack"></div></section>
           <section id="tab-concepts" class="output-tab hidden"><div class="section-title">Generated Concepts <span id="concepts-count-large">0</span></div><div id="concepts-output" class="stack"></div></section>
+          <section id="tab-exports" class="output-tab hidden"><div class="section-title">Export Package <span id="exports-count-large">0</span></div><div id="exports-output" class="stack"></div></section>
         </section>
         <section class="history-card hidden" id="history-panel">
           <header class="results-head">
@@ -116,7 +126,7 @@
       </footer>
     </aside>
   </main>
-  <script defer src="./env-config.js"></script>
-  <script defer src="./app.js"></script>
+  <script defer src="/frontend/env-config.js?v=20260429c"></script>
+  <script defer src="/frontend/app.js?v=20260429c"></script>
 </body>
 </html>

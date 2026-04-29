@@ -2,8 +2,17 @@ import math
 import re
 from collections import Counter
 
-from app.models import AdCopy, CreativeInput, CreativeScore, GeneratedCreative, Platform, VisualConcept
-from app.services.prompts import PLATFORM_ASPECT_RATIOS, PLATFORM_COPY_LIMITS
+from app.models import (
+    AdCopy,
+    CreativeInput,
+    CreativeScore,
+    GeneratedCreative,
+    LLMCreativeEvaluation,
+    Platform,
+    VisualConcept,
+)
+from app.providers.groq_llm import GroqLLMProvider
+from app.services.prompts import PLATFORM_ASPECT_RATIOS, PLATFORM_COPY_LIMITS, CREATIVE_SYSTEM_PROMPT, scoring_prompt
 
 EMOTION_WORDS = {
     "secret",
@@ -11,25 +20,24 @@ EMOTION_WORDS = {
     "waste",
     "struggle",
     "double",
-    "overnight",
     "unlock",
     "finally",
     "stuck",
-    "instant",
     "faster",
     "better",
     "easy",
-    "fear",
     "win",
     "growth",
-    "breakthrough",
     "save",
     "stop",
 }
 
 
 class CreativeScoringService:
-    def score(
+    def __init__(self, llm: GroqLLMProvider | None = None) -> None:
+        self._llm = llm
+
+    async def score(
         self,
         payload: CreativeInput,
         concepts: list[VisualConcept],
@@ -46,27 +54,25 @@ class CreativeScoringService:
 
         scores: list[CreativeScore] = []
         for concept in concepts:
-            copy = copy_lookup.get((concept.hook_text, concept.angle_name)) or self._fallback_copy(
-                concept=concept,
-                ad_copies=ad_copies,
-            )
+            copy = copy_lookup.get((concept.hook_text, concept.angle_name)) or self._fallback_copy(concept=concept, ad_copies=ad_copies)
             generated = generated_lookup.get(concept.concept_id)
+            heuristic = self._heuristic_scores(payload=payload, copy=copy, concept=concept, generated=generated, token_frequency=token_frequency)
+            llm_eval = await self._llm_evaluate(payload=payload, concept=concept, copy=copy)
 
-            emotional_intensity = self._score_emotion(copy=copy, concept=concept)
-            clarity = self._score_clarity(payload.platform, copy)
-            uniqueness = self._score_uniqueness(copy, token_frequency)
-            platform_fit = self._score_platform_fit(payload.platform, copy, concept, generated)
+            clarity = self._blend_scores(heuristic["clarity"], llm_eval.clarity)
+            platform_fit = self._blend_scores(heuristic["platform_fit"], llm_eval.platform_fit)
+            persuasion = llm_eval.persuasion
+            cta_alignment = llm_eval.cta_alignment
+            uniqueness = heuristic["uniqueness"]
+            emotional_intensity = heuristic["emotional_intensity"]
 
             total = round(
-                emotional_intensity * 0.3
-                + clarity * 0.3
-                + uniqueness * 0.2
-                + platform_fit * 0.2
-            )
-
-            rationale = (
-                f"Strongest on {payload.platform.value} because the angle is "
-                f"{concept.angle_name.lower()} with a {concept.aspect_ratio} execution."
+                clarity * 0.22
+                + persuasion * 0.24
+                + cta_alignment * 0.18
+                + platform_fit * 0.18
+                + uniqueness * 0.10
+                + emotional_intensity * 0.08
             )
             scores.append(
                 CreativeScore(
@@ -75,8 +81,10 @@ class CreativeScoringService:
                     clarity=clarity,
                     uniqueness=uniqueness,
                     platform_fit=platform_fit,
+                    persuasion=persuasion,
+                    cta_alignment=cta_alignment,
                     total_score=min(100, max(0, total)),
-                    rationale=rationale,
+                    rationale=llm_eval.rationale,
                 )
             )
 
@@ -85,7 +93,7 @@ class CreativeScoringService:
             item.rank = index
         return ranked
 
-    def score_ad_copies(
+    async def score_ad_copies(
         self,
         payload: CreativeInput,
         concepts: list[VisualConcept],
@@ -95,56 +103,83 @@ class CreativeScoringService:
         if not ad_copies:
             return []
 
-        generated_lookup = {creative.concept_id: creative for creative in generated_creatives}
-        token_frequency = Counter(
-            token
-            for copy in ad_copies
-            for token in self._tokens(" ".join([copy.primary_text, copy.headline, copy.description]))
-        )
+        scored_creatives = await self.score(payload, concepts, ad_copies, generated_creatives)
+        score_lookup = {item.concept_id: item for item in scored_creatives}
 
-        scored_rows: list[tuple[int, int, str]] = []
-        for index, copy in enumerate(ad_copies):
+        scored: list[AdCopy] = []
+        for copy in ad_copies:
             concept = self._match_concept(copy=copy, concepts=concepts)
-            generated = generated_lookup.get(concept.concept_id) if concept else None
-
-            emotional_intensity = self._score_emotion(copy=copy, concept=concept) if concept else 55
-            clarity = self._score_clarity(payload.platform, copy)
-            uniqueness = self._score_uniqueness(copy, token_frequency)
-            platform_fit = self._score_platform_fit(payload.platform, copy, concept, generated) if concept else 60
-
-            total = round(
-                emotional_intensity * 0.3
-                + clarity * 0.3
-                + uniqueness * 0.2
-                + platform_fit * 0.2
-            )
-
-            if concept:
-                rationale = (
-                    f"Matched to {concept.angle_name.lower()} with a {concept.aspect_ratio} concept execution."
-                )
-            else:
-                rationale = f"Scored on copy clarity, uniqueness, and {payload.platform.value} platform fit."
-
-            scored_rows.append((index, min(100, max(0, total)), rationale))
-
-        ranked_rows = sorted(scored_rows, key=lambda item: item[1], reverse=True)
-        rank_lookup = {original_index: rank for rank, (original_index, _, _) in enumerate(ranked_rows, start=1)}
-        score_lookup = {original_index: (total, rationale) for original_index, total, rationale in scored_rows}
-
-        scored_copies: list[AdCopy] = []
-        for index, copy in enumerate(ad_copies):
-            total_score, rationale = score_lookup[index]
-            scored_copies.append(
+            score = score_lookup.get(concept.concept_id) if concept else None
+            scored.append(
                 copy.model_copy(
                     update={
-                        "total_score": total_score,
-                        "score_rank": rank_lookup[index],
-                        "score_rationale": rationale,
+                        "total_score": score.total_score if score else 0,
+                        "score_rank": score.rank if score else None,
+                        "score_rationale": score.rationale if score else "No score available.",
                     }
                 )
             )
-        return scored_copies
+        return scored
+
+    async def _llm_evaluate(
+        self,
+        *,
+        payload: CreativeInput,
+        concept: VisualConcept,
+        copy: AdCopy,
+    ) -> LLMCreativeEvaluation:
+        if not self._llm:
+            return LLMCreativeEvaluation(
+                clarity=70,
+                persuasion=68,
+                cta_alignment=72,
+                platform_fit=70,
+                rationale="Fallback evaluation used because no scoring LLM is configured.",
+            )
+
+        try:
+            return await self._llm.structured_completion(
+                instructions=CREATIVE_SYSTEM_PROMPT,
+                user_prompt=scoring_prompt(
+                    payload,
+                    concept,
+                    {
+                        "primary_text": copy.primary_text,
+                        "headline": copy.headline,
+                        "description": copy.description,
+                        "cta": copy.cta,
+                    },
+                ),
+                response_model=LLMCreativeEvaluation,
+            )
+        except Exception:
+            return LLMCreativeEvaluation(
+                clarity=70,
+                persuasion=68,
+                cta_alignment=72,
+                platform_fit=70,
+                rationale="Fallback evaluation used because the scoring model was unavailable.",
+            )
+
+    def _heuristic_scores(
+        self,
+        *,
+        payload: CreativeInput,
+        copy: AdCopy,
+        concept: VisualConcept,
+        generated: GeneratedCreative | None,
+        token_frequency: Counter[str],
+    ) -> dict[str, int]:
+        return {
+            "emotional_intensity": self._score_emotion(copy=copy, concept=concept),
+            "clarity": self._score_clarity(payload.platform, copy),
+            "uniqueness": self._score_uniqueness(copy, token_frequency),
+            "platform_fit": self._score_platform_fit(payload.platform, copy, concept, generated),
+        }
+
+    @staticmethod
+    def _blend_scores(heuristic: int, llm_value: int) -> int:
+        return round((heuristic * 0.35) + (llm_value * 0.65))
 
     def _fallback_copy(self, *, concept: VisualConcept, ad_copies: list[AdCopy]) -> AdCopy:
         for copy in ad_copies:
@@ -168,7 +203,7 @@ class CreativeScoringService:
         text = " ".join([copy.primary_text, copy.headline, concept.mood, concept.scene_description]).lower()
         hits = sum(1 for token in self._tokens(text) if token in EMOTION_WORDS)
         punctuation_bonus = 4 if "!" in copy.primary_text or "!" in copy.headline else 0
-        return min(100, 48 + hits * 9 + punctuation_bonus)
+        return min(100, 48 + hits * 8 + punctuation_bonus)
 
     def _score_clarity(self, platform: Platform, copy: AdCopy) -> int:
         limits = PLATFORM_COPY_LIMITS[platform]

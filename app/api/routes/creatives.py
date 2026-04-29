@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from app.api.auth import require_api_auth
 from app.models import CampaignPackage, CreativeInput, Platform, TopCreativesResponse
 from app.services.engine import CreativeDirectorEngine, ServiceContainer
 
@@ -17,6 +18,7 @@ def get_engine(container: ServiceContainer = Depends(get_container)) -> Creative
 @router.post("/generate-creatives", response_model=CampaignPackage)
 async def generate_creatives(
     payload: CreativeInput,
+    _actor: str = Depends(require_api_auth),
     engine: CreativeDirectorEngine = Depends(get_engine),
 ) -> CampaignPackage:
     try:
@@ -38,6 +40,7 @@ async def generate_creatives(
 async def get_top_creatives(
     limit: int = Query(default=10, ge=1, le=50),
     platform: Platform | None = None,
+    _actor: str = Depends(require_api_auth),
     engine: CreativeDirectorEngine = Depends(get_engine),
 ) -> TopCreativesResponse:
     return engine.get_top_creatives(limit=limit, platform=platform)

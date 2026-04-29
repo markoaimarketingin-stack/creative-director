@@ -1,5 +1,3 @@
-// Configuration: Change this to your Render backend URL if hosting frontend on Vercel
-// Example: const API_BASE_URL = "https://your-app.onrender.com";
 let API_BASE_URL = (
   window.__APP_CONFIG__ &&
   typeof window.__APP_CONFIG__.BACKEND_URL === "string" &&
@@ -18,12 +16,17 @@ const loadingPanel = byId("loading-panel");
 const resultsPanel = byId("results-panel");
 const liveStatus = byId("live-status");
 const resultsTitle = byId("results-title");
+const heroGenerateButton = byId("hero-generate");
 const hooksOutput = byId("hooks-output");
 const anglesOutput = byId("angles-output");
 const copyOutput = byId("copy-output");
 const conceptsOutput = byId("concepts-output");
+const finalsOutput = byId("finals-output");
+const previewsOutput = byId("previews-output");
+const exportsOutput = byId("exports-output");
 const sampleInput = byId("f-samples");
 const sampleHint = byId("f-samples-hint");
+const logoInput = byId("f-logo");
 const btnChatHistory = byId("btn-chat-history");
 const btnChatNew = byId("btn-chat-new");
 const btnSidebarChat = byId("btn-sidebar-chat");
@@ -33,15 +36,19 @@ const chatPanel = document.querySelector(".chat-panel");
 const historyPanel = byId("history-panel");
 const navExecutionHistory = byId("nav-execution-history");
 const historyOutput = byId("history-output");
+const requiredFieldIds = ["f-brand", "f-desc", "f-audience", "f-benefits"];
 
 const MAX_SAMPLE_IMAGES = 4;
 const MAX_SAMPLE_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
 const countTargets = {
+  finals: [byId("finals-count"), byId("finals-count-large")],
+  previews: [byId("previews-count"), byId("previews-count-large")],
   hooks: [byId("hooks-count"), byId("hooks-count-large")],
   angles: [byId("angles-count"), byId("angles-count-large")],
   copy: [byId("copy-count"), byId("copy-count-large")],
-  concepts: [byId("concepts-count"), byId("concepts-count-large")]
+  concepts: [byId("concepts-count"), byId("concepts-count-large")],
+  exports: [byId("exports-count"), byId("exports-count-large")]
 };
 
 let chatContext = {};
@@ -58,7 +65,55 @@ function esc(v) {
 
 function setStatus(msg, bad = false) {
   liveStatus.textContent = msg;
-  liveStatus.style.color = bad ? "#b42318" : "#575757";
+  liveStatus.style.color = bad ? "#a9342a" : "#4f5f72";
+}
+
+function clearFieldErrors() {
+  requiredFieldIds.forEach((id) => {
+    const field = byId(id);
+    if (field) field.classList.remove("field-error");
+  });
+}
+
+function markFieldError(id) {
+  const field = byId(id);
+  if (field) field.classList.add("field-error");
+}
+
+function validatePayload(payload) {
+  clearFieldErrors();
+  const errors = [];
+  if (!payload.brand_name) {
+    errors.push("Brand Name is required.");
+    markFieldError("f-brand");
+  }
+  if (!payload.product_description) {
+    errors.push("Product Description is required.");
+    markFieldError("f-desc");
+  }
+  if (!payload.target_audience) {
+    errors.push("Target Audience is required.");
+    markFieldError("f-audience");
+  }
+  if (!payload.key_benefits.length) {
+    errors.push("Add at least one Key Benefit.");
+    markFieldError("f-benefits");
+  }
+  return errors;
+}
+
+async function parseErrorResponse(response) {
+  try {
+    const data = await response.json();
+    if (typeof data.detail === "string") return data.detail;
+    return JSON.stringify(data);
+  } catch {
+    try {
+      return await response.text();
+    } catch {
+      return `Request failed with status ${response.status}`;
+    }
+  }
 }
 
 async function getBase64(file) {
@@ -73,7 +128,17 @@ async function getBase64(file) {
 function setSampleHint(message, bad = false) {
   if (!sampleHint) return;
   sampleHint.textContent = message;
-  sampleHint.style.color = bad ? "#b42318" : "#575757";
+  sampleHint.style.color = bad ? "#a9342a" : "#4f5f72";
+}
+
+function toPublicAssetUrl(rawPath) {
+  if (!rawPath) return "";
+  if (/^data:|^https?:\/\//i.test(rawPath)) return rawPath;
+
+  const normalized = String(rawPath).replaceAll("\\", "/");
+  const outputIndex = normalized.toLowerCase().indexOf("/output/");
+  const relative = outputIndex >= 0 ? normalized.slice(outputIndex + 8) : normalized.split("/output/").pop();
+  return `${API_BASE_URL}/output/${relative.replace(/^\/+/, "")}`;
 }
 
 function showDashboard() {
@@ -105,7 +170,7 @@ function showHistory() {
   loadingPanel.classList.add("hidden");
   resultsPanel.classList.add("hidden");
   if (historyPanel) historyPanel.classList.remove("hidden");
-  
+
   dashboardNav.classList.remove("active");
   document.querySelectorAll(".specialist").forEach((n) => n.classList.remove("active"));
   if (navExecutionHistory) navExecutionHistory.classList.add("active");
@@ -122,22 +187,21 @@ function empty(target, msg) {
 }
 
 function resetOutputs() {
+  empty(finalsOutput, "Rendered ad creatives will appear here after generation.");
+  empty(previewsOutput, "Platform previews will appear here after generation.");
   empty(hooksOutput, "Hooks will appear here after generation.");
   empty(anglesOutput, "Angles will appear here after generation.");
   empty(copyOutput, "Ad copy will appear here after generation.");
   empty(conceptsOutput, "Generated concepts will appear here after generation.");
-  setCount("hooks", 0);
-  setCount("angles", 0);
-  setCount("copy", 0);
-  setCount("concepts", 0);
+  empty(exportsOutput, "Export rows will appear here after generation.");
+  Object.keys(countTargets).forEach((key) => setCount(key, 0));
 }
 
 function activateTab(tab) {
   document.querySelectorAll(".tab").forEach((n) => n.classList.toggle("active", n.dataset.tab === tab));
-  byId("tab-hooks").classList.toggle("hidden", tab !== "hooks");
-  byId("tab-angles").classList.toggle("hidden", tab !== "angles");
-  byId("tab-copy").classList.toggle("hidden", tab !== "copy");
-  byId("tab-concepts").classList.toggle("hidden", tab !== "concepts");
+  ["finals", "previews", "hooks", "angles", "copy", "concepts", "exports"].forEach((name) => {
+    byId(`tab-${name}`).classList.toggle("hidden", tab !== name);
+  });
   document.querySelectorAll(".specialist").forEach((n) => n.classList.toggle("active", n.dataset.agentTab === tab));
   dashboardNav.classList.remove("active");
   resultsTitle.textContent = "Campaign Output";
@@ -148,44 +212,114 @@ function list(target, items, render) {
     empty(target, "No items.");
     return;
   }
-  target.innerHTML = items.map(render).join("");
+  target.innerHTML = items.map((item, index) => render(item, index)).join("");
+}
+
+function fileNameFromPath(rawPath, fallback) {
+  if (!rawPath) return fallback;
+  const normalized = String(rawPath).replaceAll("\\", "/");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || fallback;
+}
+
+function downloadButton(url, filename, label) {
+  if (!url) return "";
+  return `<a class="download-btn" href="${url}" download="${esc(filename)}">${esc(label)}</a>`;
 }
 
 function renderAll(data) {
   showResults();
-  activateTab("hooks");
+  activateTab("finals");
 
   const hooks = data.hooks || [];
   const angles = data.angles || [];
   const copies = [...(data.ad_copies || [])].sort((a, b) => (b.total_score ?? -1) - (a.total_score ?? -1));
   const concepts = data.visual_concepts || [];
-  const generated = data.generated_creatives || [];
-  const genMap = generated.reduce((acc, x) => ({ ...acc, [x.concept_id]: x }), {});
+  const assets = data.creative_assets || [];
+  const exportRows = data.export_rows || [];
+  const previews = assets.filter((asset) => asset.preview);
+  const campaignDir = data.output_directory || "";
+  const csvUrl = campaignDir ? toPublicAssetUrl(`${campaignDir}\\exports\\meta_ads_bulk_upload.csv`) : "";
+  const renderedCount = assets.filter((asset) => asset.rendered_ad).length;
 
+  setCount("finals", assets.length);
+  setCount("previews", previews.length);
   setCount("hooks", hooks.length);
   setCount("angles", angles.length);
   setCount("copy", copies.length);
   setCount("concepts", concepts.length);
+  setCount("exports", exportRows.length);
 
-  chatContext = { ...chatContext, campaign: { hooks, angles, copies, concepts } };
+  chatContext = { ...chatContext, campaign: { hooks, angles, copies, concepts, assets, exportRows } };
+  setStatus(`Generated ${renderedCount} full ad${renderedCount === 1 ? "" : "s"} with previews and export assets.`);
+
+  list(finalsOutput, assets, (asset) => {
+    const renderedUrl = toPublicAssetUrl(asset.rendered_ad?.image_path);
+    const previewUrl = toPublicAssetUrl(asset.preview?.image_path);
+    return `
+      <div class="card card-creative">
+        <div class="creative-grid">
+          <div>
+            ${renderedUrl ? `<img src="${renderedUrl}" class="concept-img" alt="Rendered ad">` : '<div class="card-inline-empty">Rendered output unavailable.</div>'}
+          </div>
+          <div class="creative-meta">
+            <div class="pill-row">
+              <span class="metric-pill">Rank ${esc(asset.score?.rank ?? "-")}</span>
+              <span class="metric-pill">Score ${esc(asset.score?.total_score ?? "-")}</span>
+              <span class="metric-pill">${esc(asset.platform)}</span>
+            </div>
+            <h3>${esc(asset.headline || asset.hook_text)}</h3>
+            <p><strong>CTA:</strong> ${esc(asset.cta || "-")}</p>
+            <p><strong>Angle:</strong> ${esc(asset.angle_name)}</p>
+            <p><strong>Hook Type:</strong> ${esc(asset.hook_type || "-")}</p>
+            <p>${esc(asset.primary_text || "")}</p>
+            <div class="download-row">
+              ${downloadButton(renderedUrl, fileNameFromPath(asset.rendered_ad?.image_path, `${asset.concept_id}.png`), "Download PNG")}
+              ${downloadButton(previewUrl, fileNameFromPath(asset.preview?.image_path, `${asset.concept_id}-preview.png`), "Download Preview")}
+            </div>
+            <div class="mono">${esc(asset.score?.rationale || "")}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  list(previewsOutput, previews, (asset) => {
+    const previewUrl = toPublicAssetUrl(asset.preview?.image_path);
+    return `
+      <div class="card">
+        <h3>${esc(asset.campaign_name)} | ${esc(asset.platform)} preview</h3>
+        ${previewUrl ? `<img src="${previewUrl}" class="concept-img" alt="Feed preview">` : '<div class="card-inline-empty">Preview unavailable.</div>'}
+        <p>${esc(asset.headline || "")}</p>
+        <div class="download-row">
+          ${downloadButton(previewUrl, fileNameFromPath(asset.preview?.image_path, `${asset.concept_id}-preview.png`), "Download Preview")}
+        </div>
+      </div>
+    `;
+  });
 
   list(hooksOutput, hooks, (x) => `<div class="card"><h3>${esc(x.type)}</h3><p>${esc(x.text)}</p><p>${esc(x.rationale)}</p></div>`);
   list(anglesOutput, angles, (x) => `<div class="card"><h3>${esc(x.name)}</h3><p>${esc(x.description)}</p><p>Emotion: ${esc(x.target_emotion)} | Use case: ${esc(x.use_case)}</p></div>`);
   list(copyOutput, copies, (x) => `<div class="card"><h3>${esc(x.headline)}</h3><p>${esc(x.primary_text)}</p><p>CTA: ${esc(x.cta)} | Hook: ${esc(x.hook_text)}</p><div class="mono">Score: ${esc(x.total_score ?? "-")} | Rank: ${esc(x.score_rank ?? "-")} | Angle: ${esc(x.angle_name)}</div></div>`);
-  list(conceptsOutput, concepts, (x) => {
-    const gen = genMap[x.concept_id] || {};
-    const imgs = (gen.image_urls || []).map(url => `<img src="${url}" class="concept-img" alt="Generated concept" onerror="this.style.display='none'">`).join("");
-    const error = gen.error ? `<div class="error-msg">Error: ${esc(gen.error)}</div>` : "";
-    
+  list(conceptsOutput, concepts, (x) => `<div class="card"><h3>${esc(x.concept_id)} | ${esc(x.aspect_ratio)} | ${esc(x.media_type)}</h3><p>${esc(x.scene_description)}</p><div class="mono">${esc(x.generation_prompt)}</div></div>`);
+  list(exportsOutput, exportRows, (row, index) => {
+    const imageUrl = toPublicAssetUrl(row.image_path);
+    const previewUrl = toPublicAssetUrl(row.preview_path);
     return `
-      <div class="card">
-        <h3>${esc(x.concept_id)} | ${esc(x.aspect_ratio)} | ${esc(x.media_type)}</h3>
-        ${imgs}
-        ${error}
-        <p>${esc(x.scene_description)}</p>
-        <div class="mono">${esc(x.generation_prompt)}</div>
+    <div class="card">
+      <h3>${esc(row.ad_name)}</h3>
+      <p><strong>Campaign:</strong> ${esc(row.campaign_name)}</p>
+      <p><strong>Ad Set:</strong> ${esc(row.ad_set_name)}</p>
+      <p><strong>Headline:</strong> ${esc(row.headline)}</p>
+      <p><strong>CTA:</strong> ${esc(row.cta)}</p>
+      <div class="download-row">
+        ${downloadButton(csvUrl, fileNameFromPath(csvUrl, "meta_ads_bulk_upload.csv"), index === 0 ? "Download CSV" : "CSV")}
+        ${downloadButton(imageUrl, fileNameFromPath(row.image_path, `${row.ad_name}.png`), "Rendered PNG")}
+        ${downloadButton(previewUrl, fileNameFromPath(row.preview_path, `${row.ad_name}-preview.png`), "Preview PNG")}
       </div>
-    `;
+      <div class="mono">${esc(row.image_path)}${row.preview_path ? `\n${esc(row.preview_path)}` : ""}</div>
+    </div>
+  `;
   });
 }
 
@@ -210,6 +344,9 @@ async function sendChatMessage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, context: chatContext, session_id: chatSessionId })
     });
+    if (!res.ok) {
+      throw new Error(await parseErrorResponse(res));
+    }
     const data = await res.json();
     appendChat("ai", esc(data.reply || "No response received."));
     chatContext = data.context || chatContext;
@@ -217,8 +354,8 @@ async function sendChatMessage() {
       chatSessionId = data.session_id;
       localStorage.setItem("chat_session_id", chatSessionId);
     }
-  } catch {
-    appendChat("ai", "Sorry, there was an error contacting the assistant.");
+  } catch (error) {
+    appendChat("ai", esc(error.message || "Sorry, there was an error contacting the assistant."));
   } finally {
     chatSend.disabled = false;
   }
@@ -231,12 +368,10 @@ async function loadChatHistory() {
     if (!res.ok) return;
     const data = await res.json();
     if (data.history && data.history.length > 0) {
-      // Clear the chat body so we don't have duplicate default messages
-      chatBody.innerHTML = '';
-      data.history.forEach(msg => {
+      chatBody.innerHTML = "";
+      data.history.forEach((msg) => {
         appendChat(msg.role === "assistant" ? "ai" : "user", esc(msg.content));
       });
-      // Pre-fill history into context
       chatContext.history = data.history;
     }
   } catch (e) {
@@ -257,6 +392,56 @@ async function loadUiConfig() {
   }
 }
 
+async function buildPayload() {
+  const payload = {
+    brand_name: byId("f-brand").value.trim(),
+    product_description: byId("f-desc").value.trim(),
+    target_audience: byId("f-audience").value.trim(),
+    platform: byId("f-platform").value,
+    objective: byId("f-objective").value,
+    tone: byId("f-tone").value,
+    key_benefits: byId("f-benefits").value.split(",").map((s) => s.trim()).filter(Boolean),
+    competitors: byId("f-competitors").value.split(",").map((s) => s.trim()).filter(Boolean),
+    visual_style: byId("f-visual").value.trim(),
+    brand_colors: byId("f-brand-colors").value.split(",").map((s) => s.trim()).filter(Boolean),
+    brand_fonts: byId("f-brand-fonts").value.split(",").map((s) => s.trim()).filter(Boolean),
+    hook_count: parseInt(byId("f-hooks").value, 10) || 10,
+    angle_count: parseInt(byId("f-angles").value, 10) || 3,
+    copy_count: parseInt(byId("f-copy").value, 10) || 5,
+    concept_count: parseInt(byId("f-concepts").value, 10) || 2,
+    sample_images: []
+  };
+
+  if (logoInput && logoInput.files && logoInput.files[0]) {
+    payload.logo_image = await getBase64(logoInput.files[0]);
+  }
+
+  const sampleFiles = sampleInput ? sampleInput.files : [];
+  if (sampleFiles.length > 0) {
+    setStatus("Processing upload images...");
+    const selected = Array.from(sampleFiles).slice(0, MAX_SAMPLE_IMAGES);
+    for (const file of selected) {
+      if (!file.type.startsWith("image/") || file.size > MAX_SAMPLE_IMAGE_SIZE_BYTES) {
+        continue;
+      }
+      try {
+        payload.sample_images.push(await getBase64(file));
+      } catch (e) {
+        console.error("Error reading file", e);
+      }
+    }
+
+    setSampleHint(
+      payload.sample_images.length
+        ? `Using ${payload.sample_images.length} reference image(s) for generation.`
+        : "No valid sample images selected. Using text-only generation.",
+      payload.sample_images.length === 0
+    );
+  }
+
+  return payload;
+}
+
 function wireEvents() {
   chatSend.addEventListener("click", sendChatMessage);
   chatInput.addEventListener("keydown", (e) => {
@@ -268,7 +453,7 @@ function wireEvents() {
 
   dashboardNav.addEventListener("click", () => {
     showDashboard();
-    setStatus("Strategy dashboard ready.");
+    setStatus("Finished ad workspace ready.");
   });
 
   document.querySelectorAll(".tab").forEach((tab) => {
@@ -288,88 +473,55 @@ function wireEvents() {
       empty(historyOutput, "Loading execution history...");
       try {
         const res = await fetch(`${API_BASE_URL}/top-creatives`);
-        if (!res.ok) throw new Error("Failed to load history");
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         const data = await res.json();
-        
+
         if (!data.items || data.items.length === 0) {
           empty(historyOutput, "No previous executions found.");
           return;
         }
 
-        historyOutput.innerHTML = data.items.map(item => {
-          const imgs = (item.image_urls || []).map(url => `<img src="${url}" class="concept-img" alt="Creative image">`).join("");
+        historyOutput.innerHTML = data.items.map((item) => {
+          const primaryImage = toPublicAssetUrl(item.rendered_image_path || item.preview_image_path || (item.image_urls || [])[0]);
+          const renderedUrl = toPublicAssetUrl(item.rendered_image_path);
+          const previewUrl = toPublicAssetUrl(item.preview_image_path);
           return `
             <div class="card">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                <h3 style="margin:0">${esc(item.campaign_name)}</h3>
-                <span class="mono">Score: ${esc(item.total_score)}</span>
+              <div class="history-head">
+                <h3>${esc(item.campaign_name)}</h3>
+                <span class="metric-pill">Score ${esc(item.total_score)}</span>
               </div>
-              <p style="margin:5px 0;"><strong>Headline:</strong> ${esc(item.headline)}</p>
-              <p style="margin:5px 0;"><strong>CTA:</strong> ${esc(item.cta)}</p>
-              <div class="mono" style="margin-bottom: 10px;">Platform: ${esc(item.platform)} | Concept: ${esc(item.concept_id)}</div>
-              ${imgs}
+              ${primaryImage ? `<img src="${primaryImage}" class="concept-img" alt="Creative image">` : ""}
+              <p><strong>Headline:</strong> ${esc(item.headline || "-")}</p>
+              <p><strong>CTA:</strong> ${esc(item.cta || "-")}</p>
+              <div class="download-row">
+                ${downloadButton(renderedUrl, fileNameFromPath(item.rendered_image_path, `${item.concept_id}.png`), "Rendered PNG")}
+                ${downloadButton(previewUrl, fileNameFromPath(item.preview_image_path, `${item.concept_id}-preview.png`), "Preview PNG")}
+              </div>
+              <div class="mono">Platform: ${esc(item.platform)} | Concept: ${esc(item.concept_id)}</div>
             </div>
           `;
         }).join("");
       } catch (e) {
-        empty(historyOutput, "Error loading execution history.");
+        empty(historyOutput, `Error loading execution history: ${esc(e.message || "Unknown error")}`);
       }
     });
   }
 
-  byId("hero-generate").addEventListener("click", async () => {
-    const payload = {
-      brand_name: byId("f-brand").value.trim(),
-      product_description: byId("f-desc").value.trim(),
-      target_audience: byId("f-audience").value.trim(),
-      platform: byId("f-platform").value,
-      objective: byId("f-objective").value,
-      tone: byId("f-tone").value,
-      key_benefits: byId("f-benefits").value.split(",").map((s) => s.trim()).filter(Boolean),
-      competitors: byId("f-competitors").value.split(",").map((s) => s.trim()).filter(Boolean),
-      visual_style: byId("f-visual").value.trim(),
-      hook_count: parseInt(byId("f-hooks").value, 10) || 10,
-      angle_count: parseInt(byId("f-angles").value, 10) || 3,
-      copy_count: parseInt(byId("f-copy").value, 10) || 5,
-      concept_count: parseInt(byId("f-concepts").value, 10) || 2,
-      sample_images: []
-    };
-
-      const sampleFiles = sampleInput ? sampleInput.files : [];
-    if (sampleFiles.length > 0) {
-        setStatus("Processing upload images...");
-        const selected = Array.from(sampleFiles).slice(0, MAX_SAMPLE_IMAGES);
-        for (const file of selected) {
-          try {
-            if (!file.type.startsWith("image/")) {
-              continue;
-            }
-            if (file.size > MAX_SAMPLE_IMAGE_SIZE_BYTES) {
-              continue;
-            }
-            const b64 = await getBase64(file);
-            payload.sample_images.push(b64);
-          } catch (e) {
-            console.error("Error reading file", e);
-          }
-        }
-
-        setSampleHint(
-          payload.sample_images.length
-          ? `Using ${payload.sample_images.length} reference image(s) for generation.`
-          : "No valid sample images selected. Using text-only generation.",
-          payload.sample_images.length === 0
-        );
-    }
-
-    if (!payload.brand_name || !payload.product_description) {
-      alert("Please fill in at least Brand Name and Product Description.");
+  heroGenerateButton.addEventListener("click", async () => {
+    const payload = await buildPayload();
+    const validationErrors = validatePayload(payload);
+    if (validationErrors.length) {
+      setStatus(validationErrors[0], true);
+      byId("f-brand")?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
     resetOutputs();
     showLoading();
-    setStatus("Generating campaign...");
+    setStatus("Generating final ad package...");
+    heroGenerateButton.disabled = true;
+    heroGenerateButton.textContent = "Generating...";
 
     try {
       const response = await fetch(`${API_BASE_URL}/generate-creatives`, {
@@ -378,12 +530,14 @@ function wireEvents() {
         body: JSON.stringify(payload)
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Request failed.");
+      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
       renderAll(data);
-      setStatus("Generation complete.");
     } catch (error) {
       setStatus(error.message || "Generation failed.", true);
       showDashboard();
+    } finally {
+      heroGenerateButton.disabled = false;
+      heroGenerateButton.textContent = "Generate Final Ads";
     }
   });
 
@@ -394,24 +548,18 @@ function wireEvents() {
         setSampleHint("Optional. Up to 4 images, max 5MB each, used as visual references for Vertex AI.");
         return;
       }
-
       if (files.length > MAX_SAMPLE_IMAGES) {
         setSampleHint(`Selected ${files.length} files. Only first ${MAX_SAMPLE_IMAGES} will be used.`, true);
         return;
       }
-
-      const oversized = files.some((f) => f.size > MAX_SAMPLE_IMAGE_SIZE_BYTES);
-      if (oversized) {
+      if (files.some((f) => f.size > MAX_SAMPLE_IMAGE_SIZE_BYTES)) {
         setSampleHint("One or more images are larger than 5MB and will be ignored.", true);
         return;
       }
-
-      const invalidType = files.some((f) => !f.type.startsWith("image/"));
-      if (invalidType) {
+      if (files.some((f) => !f.type.startsWith("image/"))) {
         setSampleHint("Only image files are accepted.", true);
         return;
       }
-
       setSampleHint(`Selected ${files.length} sample image(s).`);
     });
   }
@@ -429,18 +577,18 @@ function wireEvents() {
           }
           const data = await res.json();
           if (data.sessions && data.sessions.length > 0) {
-            const validSessions = data.sessions.filter(s => s.session_id);
+            const validSessions = data.sessions.filter((s) => s.session_id);
             if (validSessions.length > 0) {
-              chatSessionsList.innerHTML = validSessions.map(s => {
-                const title = s.title ? s.title : 'Session: ' + String(s.session_id).substring(0, 8);
+              chatSessionsList.innerHTML = validSessions.map((s) => {
+                const title = s.title ? s.title : "Session: " + String(s.session_id).substring(0, 8);
                 return `<div class="chat-session-item" data-id="${s.session_id}" style="padding: 10px; border-bottom: 1px solid #e5e5e5; cursor: pointer; font-size: 0.9em;">
                   <strong>${esc(title)}</strong><br>
                   <span style="font-size: 0.8em; color: #666;">${new Date(s.last_activity).toLocaleString()}</span>
                 </div>`;
-              }).join('');
-              
-              document.querySelectorAll('.chat-session-item').forEach(item => {
-                item.addEventListener('click', () => {
+              }).join("");
+
+              document.querySelectorAll(".chat-session-item").forEach((item) => {
+                item.addEventListener("click", () => {
                   chatSessionId = item.dataset.id;
                   localStorage.setItem("chat_session_id", chatSessionId);
                   chatHistoryPanel.classList.add("hidden");
@@ -453,7 +601,7 @@ function wireEvents() {
           } else {
             chatSessionsList.innerHTML = '<div style="padding: 10px;">No previous chats found.</div>';
           }
-        } catch (e) {
+        } catch {
           chatSessionsList.innerHTML = '<div style="padding: 10px;">Error loading sessions.</div>';
         }
       }
@@ -484,7 +632,6 @@ function wireEvents() {
       chatPanel.classList.remove("hidden");
     });
   }
-
 }
 
 resetOutputs();

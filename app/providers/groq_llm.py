@@ -28,6 +28,7 @@ class GroqLLMProvider:
         self._gemini_model = settings.gemini_model
         self._gemini_base_url = settings.gemini_base_url.rstrip("/")
         self._client: httpx.AsyncClient | None = None
+        self._unavailable_error: str | None = None
 
     async def structured_completion(
         self,
@@ -48,8 +49,11 @@ class GroqLLMProvider:
         instructions: str,
         user_prompt: str,
     ) -> dict[str, Any]:
+        if self._unavailable_error:
+            raise RuntimeError(self._unavailable_error)
         if not self._api_key and not self._gemini_api_key:
-            raise ValueError("Neither GROQ_API_KEY nor GEMINI_API_KEY is configured.")
+            self._unavailable_error = "Neither GROQ_API_KEY nor GEMINI_API_KEY is configured."
+            raise ValueError(self._unavailable_error)
 
         errors: list[str] = []
         models = [self._model, *self._fallback_models]
@@ -75,7 +79,8 @@ class GroqLLMProvider:
             except RuntimeError as exc:
                 errors.append(f"gemini ({self._gemini_model}): {exc}")
 
-        raise RuntimeError(" | ".join(errors))
+        self._unavailable_error = " | ".join(errors)
+        raise RuntimeError(self._unavailable_error)
 
     async def _structured_completion_with_model(
         self,

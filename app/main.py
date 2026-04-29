@@ -22,6 +22,7 @@ async def lifespan(app: FastAPI):
     await container.aclose()
 
 settings = get_settings()
+settings.output_root.mkdir(parents=True, exist_ok=True)
 allowed_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 if settings.frontend_url and settings.frontend_url not in allowed_origins:
     allowed_origins.append(settings.frontend_url)
@@ -42,6 +43,7 @@ app.include_router(creatives_router)
 app.include_router(chat_router)
 app.include_router(suggestions_router)
 app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
+app.mount("/output", StaticFiles(directory=str(settings.output_root)), name="output")
 
 @app.get("/")
 async def root() -> FileResponse:
