@@ -363,15 +363,7 @@ def _polish_ad_copy(payload: CreativeInput, item: AdCopy, *, index: int) -> AdCo
     if payload.brand_name.lower() not in primary_text.lower():
         primary_text = f"{payload.brand_name}: {primary_text}".strip(": ")
 
-    if len(primary_text.split()) < 8:
-        primary_text = (
-            f"{payload.brand_name} helps {audience.lower()} move from brief to live creative faster. "
-            f"{value_phrase.rstrip('.') }."
-        )
-
-    if not description or description.lower() in {"performance-focused creative variant.", f"{item.angle_name.lower()} for {payload.platform.value} campaigns."}:
-        description = _fallback_description(payload, item.angle_name)
-
+    # Removed minimum length filler logic to respect minimalist ad copy requirements.
     return AdCopy(
         hook_text=item.hook_text,
         angle_name=item.angle_name,

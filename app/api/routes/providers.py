@@ -10,9 +10,30 @@ router = APIRouter(tags=["providers"])
 async def provider_health() -> dict:
     settings = get_settings()
     health: dict[str, dict[str, str | bool]] = {
+        "groq": {"configured": bool(settings.groq_api_key), "ok": False, "detail": "Not checked"},
         "gemini": {"configured": bool(settings.gemini_api_key), "ok": False, "detail": "Not checked"},
         "huggingface": {"configured": bool(settings.hf_api_key), "ok": False, "detail": "Not checked"},
     }
+
+    if settings.groq_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                    json={
+                        "model": settings.groq_model,
+                        "messages": [{"role": "user", "content": "ping"}],
+                        "max_tokens": 1
+                    }
+                )
+                response.raise_for_status()
+            health["groq"]["ok"] = True
+            health["groq"]["detail"] = "Reachable"
+        except Exception as exc:
+            health["groq"]["detail"] = str(exc)
+    else:
+        health["groq"]["detail"] = "Missing GROQ_API_KEY"
 
     if settings.gemini_api_key:
         try:
@@ -42,7 +63,7 @@ async def provider_health() -> dict:
                     f"https://router.huggingface.co/hf-inference/models/{model}",
                     headers={
                         "Authorization": f"Bearer {settings.hf_api_key.strip()}",
-                        "Accept": "image/png,image/jpeg,image/webp,image/*",
+                        "Accept": "*/*",
                         "Content-Type": "application/json",
                     },
                     json={"inputs": "A studio product photo of a luxury watch, clean background"},

@@ -586,10 +586,11 @@ function wireEvents() {
       renderAll(data);
       const providerHealth = await loadProviderHealth();
       if (providerHealth) {
+        const gr = providerHealth.groq;
         const g = providerHealth.gemini;
         const h = providerHealth.huggingface;
-        const summary = `Providers: Gemini ${g?.ok ? "OK" : "Fail"} | HF ${h?.ok ? "OK" : "Fail"}`;
-        setStatus(summary, !(g?.ok && h?.ok));
+        const summary = `Providers: Groq ${gr?.ok ? "OK" : "Fail"} | Gemini ${g?.ok ? "OK" : "Fail"} | HF ${h?.ok ? "OK" : "Fail"}`;
+        setStatus(summary, !(gr?.ok && h?.ok));
       }
     } catch (error) {
       setStatus(error.message || "Generation failed.", true);

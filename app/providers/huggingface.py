@@ -57,7 +57,7 @@ class HuggingFaceClient:
             try:
                 headers = {
                     "Authorization": f"Bearer {self._api_key}",
-                    "Accept": "image/png,image/jpeg,image/webp,image/*",
+                    "Accept": "*/*",
                 }
                 payload = {"inputs": concept.generation_prompt}
                 url = self._get_url(model)

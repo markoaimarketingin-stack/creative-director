@@ -90,25 +90,36 @@ def angle_prompt(payload: CreativeInput) -> str:
 
 
 def ad_copy_prompt(payload: CreativeInput, hooks: list[Hook], angles: list[MessagingAngle]) -> str:
-    limits = PLATFORM_COPY_LIMITS[payload.platform]
     return (
-        "Task: Generate paid social or paid search ad copy variations.\n\n"
+        "You are an expert performance marketing copywriter specializing in high-converting ads for Meta, Instagram, and Google.\n"
+        "Your task is to generate ultra-concise, high-impact ad copy that maximizes scroll-stopping power and click-through rate (CTR).\n\n"
         f"{brand_context(payload)}\n\n"
-        f"Platform character targets: primary_text <= {limits['primary_text']}, "
-        f"headline <= {limits['headline']}, description <= {limits['description']}.\n\n"
         "Use these hooks:\n"
         f"{serialize_selected(hooks[: min(len(hooks), payload.copy_count)], ['type', 'text'])}\n\n"
         "Use these messaging angles:\n"
         f"{serialize_selected(angles, ['name', 'description', 'target_emotion'])}\n\n"
         f"Return JSON with a top-level `ad_copies` array containing exactly {payload.copy_count} objects.\n"
-        "Every variant must include `hook_text`, `angle_name`, `primary_text`, `headline`, `cta`, and `description`.\n"
-        "Copy rules:\n"
-        "- Keep claims concrete and product-specific.\n"
-        "- Mention the product mechanism, use case, or differentiator early.\n"
-        "- CTA must match the objective and feel platform-native.\n"
-        "- No empty adjectives like revolutionary, game-changing, next-level.\n"
-        "- No line should depend on image context to make sense.\n"
-        "- Make each variant feel like a real ad, not a slogan."
+        "STRICT RULES (MUST FOLLOW):\n\n"
+        "1. PRIMARY TEXT:\n"
+        "- Max 12 words\n"
+        "- Only ONE sentence\n"
+        "- Must be either: (a) A punchy emotional statement OR (b) A curiosity-driven hook\n"
+        "- Do NOT explain the product or use filler words\n"
+        "- Must feel premium, sharp, and instantly engaging\n\n"
+        "2. HEADLINE:\n"
+        "- Max 6 words\n"
+        "- Focus on clear benefit, aspiration, or transformation\n"
+        "- Strong, bold, and direct\n"
+        "- No punctuation unless absolutely necessary\n\n"
+        "3. DESCRIPTION:\n"
+        "- Max 5 words\n"
+        "- Add ONLY if it strengthens clarity or urgency, otherwise return an empty string\n\n"
+        "4. VARIATIONS & STYLE:\n"
+        "- Rotate between these 3 styles: Emotional Hook, Curiosity Hook, Minimalist Premium\n"
+        "- Avoid generic phrases like 'high quality', 'best product', 'crafted for you'\n"
+        "- Prefer emotional triggers: confidence, status, transformation, desire, curiosity\n\n"
+        "OUTPUT FORMAT (STRICT JSON):\n"
+        "Each object must include: `hook_text`, `angle_name`, `primary_text`, `headline`, `cta`, and `description`."
     )
 
 
