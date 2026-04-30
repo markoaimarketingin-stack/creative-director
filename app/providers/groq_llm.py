@@ -28,7 +28,7 @@ class GroqLLMProvider:
         self._gemini_model = settings.gemini_model
         self._gemini_base_url = settings.gemini_base_url.rstrip("/")
         self._client: httpx.AsyncClient | None = None
-        self._unavailable_error: str | None = None
+        self._misconfigured_error: str | None = None
 
     async def structured_completion(
         self,
@@ -49,11 +49,11 @@ class GroqLLMProvider:
         instructions: str,
         user_prompt: str,
     ) -> dict[str, Any]:
-        if self._unavailable_error:
-            raise RuntimeError(self._unavailable_error)
+        if self._misconfigured_error:
+            raise RuntimeError(self._misconfigured_error)
         if not self._api_key and not self._gemini_api_key:
-            self._unavailable_error = "Neither GROQ_API_KEY nor GEMINI_API_KEY is configured."
-            raise ValueError(self._unavailable_error)
+            self._misconfigured_error = "Neither GROQ_API_KEY nor GEMINI_API_KEY is configured."
+            raise ValueError(self._misconfigured_error)
 
         errors: list[str] = []
         models = [self._model, *self._fallback_models]
@@ -79,8 +79,7 @@ class GroqLLMProvider:
             except RuntimeError as exc:
                 errors.append(f"gemini ({self._gemini_model}): {exc}")
 
-        self._unavailable_error = " | ".join(errors)
-        raise RuntimeError(self._unavailable_error)
+        raise RuntimeError(" | ".join(errors))
 
     async def _structured_completion_with_model(
         self,
@@ -141,7 +140,7 @@ class GroqLLMProvider:
                 raise RuntimeError("Groq returned no structured result.")
 
             try:
-                payload = json.loads(content)
+                payload = self._parse_json_payload(content)
             except json.JSONDecodeError as exc:
                 preview = content[:500]
                 raise RuntimeError(f"Groq returned invalid JSON: {preview}") from exc
@@ -212,7 +211,7 @@ class GroqLLMProvider:
                 raise RuntimeError("Gemini returned no structured result.")
 
             try:
-                payload = json.loads(content)
+                payload = self._parse_json_payload(content)
             except json.JSONDecodeError as exc:
                 preview = content[:500]
                 raise RuntimeError(f"Gemini returned invalid JSON: {preview}") from exc
@@ -244,3 +243,31 @@ class GroqLLMProvider:
 
     def _retry_delay_seconds(self, attempt: int) -> float:
         return self._retry_base_delay_seconds * (2**attempt)
+
+    @staticmethod
+    def _parse_json_payload(content: str) -> dict[str, Any]:
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            stripped = content.strip()
+            if stripped.startswith("```"):
+                stripped = stripped.strip("`")
+                if stripped.lower().startswith("json"):
+                    stripped = stripped[4:].strip()
+            start_positions = [index for index in (stripped.find("{"), stripped.find("[")) if index >= 0]
+            if not start_positions:
+                raise
+            start = min(start_positions)
+            end_object = stripped.rfind("}")
+            end_array = stripped.rfind("]")
+            end = max(end_object, end_array)
+            if end < start:
+                raise
+            payload = json.loads(stripped[start : end + 1])
+
+        if isinstance(payload, list):
+            payload = {"items": payload}
+
+        if not isinstance(payload, dict):
+            raise json.JSONDecodeError("JSON payload was not an object", content, 0)
+        return payload

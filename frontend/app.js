@@ -136,8 +136,23 @@ function toPublicAssetUrl(rawPath) {
   if (/^data:|^https?:\/\//i.test(rawPath)) return rawPath;
 
   const normalized = String(rawPath).replaceAll("\\", "/");
-  const outputIndex = normalized.toLowerCase().indexOf("/output/");
-  const relative = outputIndex >= 0 ? normalized.slice(outputIndex + 8) : normalized.split("/output/").pop();
+  const lower = normalized.toLowerCase();
+  let relative = normalized;
+  const outputMarker = "/output/";
+  const outputIndex = lower.lastIndexOf(outputMarker);
+
+  if (outputIndex >= 0) {
+    relative = normalized.slice(outputIndex + outputMarker.length);
+  } else if (lower.startsWith("output/")) {
+    relative = normalized.slice("output/".length);
+  } else {
+    const parts = normalized.split("/");
+    const outputPartIndex = parts.map((part) => part.toLowerCase()).lastIndexOf("output");
+    if (outputPartIndex >= 0) {
+      relative = parts.slice(outputPartIndex + 1).join("/");
+    }
+  }
+
   return `${API_BASE_URL}/output/${relative.replace(/^\/+/, "")}`;
 }
 
@@ -227,6 +242,19 @@ function downloadButton(url, filename, label) {
   return `<a class="download-btn" href="${url}" download="${esc(filename)}">${esc(label)}</a>`;
 }
 
+function renderScoreNote(asset) {
+  const rationale = asset.score?.rationale || "";
+  if (!rationale) return "";
+  if (/heuristic review used/i.test(rationale)) return "";
+  return `<div class="mono">${esc(rationale)}</div>`;
+}
+
+function humanizeToken(value) {
+  return String(value || "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 function renderAll(data) {
   showResults();
   activateTab("finals");
@@ -242,7 +270,7 @@ function renderAll(data) {
   const csvUrl = campaignDir ? toPublicAssetUrl(`${campaignDir}\\exports\\meta_ads_bulk_upload.csv`) : "";
   const renderedCount = assets.filter((asset) => asset.rendered_ad).length;
 
-  setCount("finals", assets.length);
+  setCount("finals", renderedCount);
   setCount("previews", previews.length);
   setCount("hooks", hooks.length);
   setCount("angles", angles.length);
@@ -269,15 +297,28 @@ function renderAll(data) {
               <span class="metric-pill">${esc(asset.platform)}</span>
             </div>
             <h3>${esc(asset.headline || asset.hook_text)}</h3>
-            <p><strong>CTA:</strong> ${esc(asset.cta || "-")}</p>
+            <div class="ad-copy-block">
+              <div class="ad-copy-label">Primary Text</div>
+              <p class="ad-copy-body">${esc(asset.primary_text || "Primary text unavailable.")}</p>
+            </div>
+            <div class="ad-copy-block">
+              <div class="ad-copy-label">Headline</div>
+              <p class="ad-copy-inline">${esc(asset.headline || asset.hook_text || "-")}</p>
+            </div>
+            <div class="ad-copy-inline-row">
+              <div><strong>Description:</strong> ${esc(asset.description || "-")}</div>
+              <div><strong>CTA:</strong> ${esc(asset.cta || "-")}</div>
+            </div>
             <p><strong>Angle:</strong> ${esc(asset.angle_name)}</p>
-            <p><strong>Hook Type:</strong> ${esc(asset.hook_type || "-")}</p>
-            <p>${esc(asset.primary_text || "")}</p>
+            <p><strong>Hook Type:</strong> ${esc(humanizeToken(asset.hook_type || "-"))}</p>
+            <p><strong>Image Provider:</strong> ${esc(asset.generated_creative?.provider || "-")} (${esc(asset.generated_creative?.status || "-")})</p>
+            ${asset.generated_creative?.error ? `<div class="mono"><strong>Provider Error:</strong> ${esc(asset.generated_creative.error)}</div>` : ""}
+            <p><strong>Concept:</strong> ${esc(asset.visual_concept?.scene_description || "-")}</p>
             <div class="download-row">
               ${downloadButton(renderedUrl, fileNameFromPath(asset.rendered_ad?.image_path, `${asset.concept_id}.png`), "Download PNG")}
               ${downloadButton(previewUrl, fileNameFromPath(asset.preview?.image_path, `${asset.concept_id}-preview.png`), "Download Preview")}
             </div>
-            <div class="mono">${esc(asset.score?.rationale || "")}</div>
+            ${renderScoreNote(asset)}
           </div>
         </div>
       </div>
@@ -290,7 +331,8 @@ function renderAll(data) {
       <div class="card">
         <h3>${esc(asset.campaign_name)} | ${esc(asset.platform)} preview</h3>
         ${previewUrl ? `<img src="${previewUrl}" class="concept-img" alt="Feed preview">` : '<div class="card-inline-empty">Preview unavailable.</div>'}
-        <p>${esc(asset.headline || "")}</p>
+        <p><strong>Primary Text:</strong> ${esc(asset.primary_text || "-")}</p>
+        <p><strong>Headline:</strong> ${esc(asset.headline || "-")}</p>
         <div class="download-row">
           ${downloadButton(previewUrl, fileNameFromPath(asset.preview?.image_path, `${asset.concept_id}-preview.png`), "Download Preview")}
         </div>
@@ -298,9 +340,9 @@ function renderAll(data) {
     `;
   });
 
-  list(hooksOutput, hooks, (x) => `<div class="card"><h3>${esc(x.type)}</h3><p>${esc(x.text)}</p><p>${esc(x.rationale)}</p></div>`);
+  list(hooksOutput, hooks, (x) => `<div class="card"><h3>${esc(humanizeToken(x.type))}</h3><p>${esc(x.text)}</p><p>${esc(x.rationale)}</p></div>`);
   list(anglesOutput, angles, (x) => `<div class="card"><h3>${esc(x.name)}</h3><p>${esc(x.description)}</p><p>Emotion: ${esc(x.target_emotion)} | Use case: ${esc(x.use_case)}</p></div>`);
-  list(copyOutput, copies, (x) => `<div class="card"><h3>${esc(x.headline)}</h3><p>${esc(x.primary_text)}</p><p>CTA: ${esc(x.cta)} | Hook: ${esc(x.hook_text)}</p><div class="mono">Score: ${esc(x.total_score ?? "-")} | Rank: ${esc(x.score_rank ?? "-")} | Angle: ${esc(x.angle_name)}</div></div>`);
+  list(copyOutput, copies, (x) => `<div class="card"><h3>${esc(x.headline)}</h3><p><strong>Primary Text:</strong> ${esc(x.primary_text)}</p><p><strong>Description:</strong> ${esc(x.description)}</p><p>CTA: ${esc(x.cta)} | Hook: ${esc(x.hook_text)}</p><div class="mono">Score: ${esc(x.total_score ?? "-")} | Rank: ${esc(x.score_rank ?? "-")} | Angle: ${esc(x.angle_name)}</div></div>`);
   list(conceptsOutput, concepts, (x) => `<div class="card"><h3>${esc(x.concept_id)} | ${esc(x.aspect_ratio)} | ${esc(x.media_type)}</h3><p>${esc(x.scene_description)}</p><div class="mono">${esc(x.generation_prompt)}</div></div>`);
   list(exportsOutput, exportRows, (row, index) => {
     const imageUrl = toPublicAssetUrl(row.image_path);
@@ -389,6 +431,16 @@ async function loadUiConfig() {
     }
   } catch {
     document.title = "Creative Director Engine";
+  }
+}
+
+async function loadProviderHealth() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/provider-health`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
   }
 }
 
@@ -532,6 +584,13 @@ function wireEvents() {
       const data = await response.json();
       if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
       renderAll(data);
+      const providerHealth = await loadProviderHealth();
+      if (providerHealth) {
+        const g = providerHealth.gemini;
+        const h = providerHealth.huggingface;
+        const summary = `Providers: Gemini ${g?.ok ? "OK" : "Fail"} | HF ${h?.ok ? "OK" : "Fail"}`;
+        setStatus(summary, !(g?.ok && h?.ok));
+      }
     } catch (error) {
       setStatus(error.message || "Generation failed.", true);
       showDashboard();

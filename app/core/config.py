@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     hf_api_key: str | None = None
     hf_image_model: str = "black-forest-labs/FLUX.1-schnell"
     hf_image_model_small: str = "black-forest-labs/FLUX.1-schnell"
-    image_provider_timeout_seconds: float = 4.0
+    image_provider_timeout_seconds: float = 90.0
 
     storage_backend: str = "local"
     s3_bucket_name: str | None = None

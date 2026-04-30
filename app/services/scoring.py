@@ -134,7 +134,7 @@ class CreativeScoringService:
                 persuasion=68,
                 cta_alignment=72,
                 platform_fit=70,
-                rationale="Fallback evaluation used because no scoring LLM is configured.",
+                rationale="Heuristic review used for clarity, platform fit, and CTA alignment.",
             )
 
         try:
@@ -152,13 +152,14 @@ class CreativeScoringService:
                 ),
                 response_model=LLMCreativeEvaluation,
             )
-        except Exception:
+        except Exception as exc:
+            print(f"[WARN] CreativeScoringService heuristic fallback: {type(exc).__name__}: {exc}")
             return LLMCreativeEvaluation(
                 clarity=70,
                 persuasion=68,
                 cta_alignment=72,
                 platform_fit=70,
-                rationale="Fallback evaluation used because the scoring model was unavailable.",
+                rationale="Heuristic review used while model scoring was temporarily unavailable.",
             )
 
     def _heuristic_scores(

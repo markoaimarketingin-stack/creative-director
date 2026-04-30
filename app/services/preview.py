@@ -31,9 +31,29 @@ class AdPreviewGenerator:
         preview.alpha_composite(image, dest=(image_x, image_y))
 
         copy_y = image_y + image.height + 24
-        body = (asset.primary_text or "")[:180]
-        draw.text((56, copy_y), body, font=font_body, fill=(17, 17, 17, 255))
-        draw.text((56, copy_y + 44), asset.headline or "", font=font_title, fill=(17, 17, 17, 255))
+        body = " ".join((asset.primary_text or "").split())
+        body_lines = self._wrap_lines(
+            draw=draw,
+            text=body,
+            font=font_body,
+            max_width=layout_size[0] - 112,
+            max_lines=3,
+        )
+        cursor_y = copy_y
+        for line in body_lines:
+            draw.text((56, cursor_y), line, font=font_body, fill=(17, 17, 17, 255))
+            cursor_y += 32
+
+        headline_lines = self._wrap_lines(
+            draw=draw,
+            text=asset.headline or "",
+            font=font_title,
+            max_width=layout_size[0] - 112,
+            max_lines=2,
+        )
+        for line in headline_lines:
+            draw.text((56, cursor_y + 10), line, font=font_title, fill=(17, 17, 17, 255))
+            cursor_y += 36
 
         preview_dir = campaign_dir / "previews"
         preview_dir.mkdir(parents=True, exist_ok=True)
@@ -64,3 +84,34 @@ class AdPreviewGenerator:
             except OSError:
                 continue
         return ImageFont.load_default()
+
+    @staticmethod
+    def _wrap_lines(
+        *,
+        draw: ImageDraw.ImageDraw,
+        text: str,
+        font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+        max_width: int,
+        max_lines: int,
+    ) -> list[str]:
+        words = text.split()
+        if not words:
+            return [""]
+
+        lines: list[str] = []
+        current: list[str] = []
+        for word in words:
+            candidate = " ".join([*current, word]).strip()
+            if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
+                current.append(word)
+                continue
+            if current:
+                lines.append(" ".join(current))
+            current = [word]
+            if len(lines) == max_lines - 1:
+                break
+
+        if current and len(lines) < max_lines:
+            lines.append(" ".join(current))
+
+        return lines[:max_lines]

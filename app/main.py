@@ -7,6 +7,7 @@ from pathlib import Path
 from app.api.routes.creatives import router as creatives_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.suggestions import router as suggestions_router
+from app.api.routes.providers import router as providers_router
 from app.core.config import get_settings
 from app.services.engine import ServiceContainer
 
@@ -42,6 +43,7 @@ app.add_middleware(
 app.include_router(creatives_router)
 app.include_router(chat_router)
 app.include_router(suggestions_router)
+app.include_router(providers_router)
 app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 app.mount("/output", StaticFiles(directory=str(settings.output_root)), name="output")
 

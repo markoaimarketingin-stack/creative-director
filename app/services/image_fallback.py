@@ -38,31 +38,55 @@ class LocalImageFallbackService:
 
         accent = ImageColor.getrgb(self._accent_color(payload))
         panel = ImageColor.getrgb(self._secondary_color(payload))
-        text_dark = (24, 22, 19)
-        text_light = (250, 245, 239)
+        panel_dark = tuple(max(0, channel - 34) for channel in accent)
+        text_dark = (27, 27, 27)
+        text_light = (248, 246, 242)
 
-        draw.rounded_rectangle((48, 48, size[0] - 48, size[1] - 48), radius=36, fill=panel)
-        draw.rounded_rectangle((64, 64, size[0] - 64, int(size[1] * 0.28)), radius=28, fill=accent)
+        outer = (40, 40, size[0] - 40, size[1] - 40)
+        draw.rounded_rectangle(outer, radius=36, fill=panel)
 
-        title_font = self._font(max(34, int(size[1] * 0.04)))
-        body_font = self._font(max(22, int(size[1] * 0.022)))
+        spotlight = (72, 72, size[0] - 72, int(size[1] * 0.32))
+        draw.rounded_rectangle(spotlight, radius=28, fill=accent)
+        draw.rounded_rectangle(
+            (spotlight[0], spotlight[1], spotlight[2], spotlight[1] + 92),
+            radius=28,
+            fill=panel_dark,
+        )
+
+        device_box = (int(size[0] * 0.18), int(size[1] * 0.4), int(size[0] * 0.82), int(size[1] * 0.8))
+        screen_box = (device_box[0] + 18, device_box[1] + 18, device_box[2] - 18, device_box[3] - 18)
+        draw.rounded_rectangle(device_box, radius=32, fill=(72, 72, 72))
+        draw.rounded_rectangle(screen_box, radius=24, fill=(245, 247, 250))
+
+        card_y = screen_box[1] + 34
+        chip_font = self._font(max(18, int(size[1] * 0.018)), bold=True)
+        label_font = self._font(max(20, int(size[1] * 0.02)))
         brand_font = self._font(max(26, int(size[1] * 0.026)), bold=True)
 
-        draw.text((88, 84), payload.brand_name.upper(), font=brand_font, fill=text_light)
-        draw.text((88, 140), self._fit_line(concept.hook_text, 56), font=title_font, fill=text_light)
+        draw.text((spotlight[0] + 28, spotlight[1] + 24), payload.brand_name.upper(), font=brand_font, fill=text_light)
+        self._draw_chip(draw, (spotlight[0] + 28, spotlight[1] + 118), self._fit_line(concept.angle_name, 24), chip_font, text_light, panel_dark)
+        self._draw_chip(draw, (spotlight[0] + 28, spotlight[1] + 174), self._fit_line(self._value_phrase(payload), 28), chip_font, text_light, panel_dark)
 
-        body_top = int(size[1] * 0.36)
-        body_lines = [
-            self._fit_line(concept.angle_name, 36),
-            self._fit_line(payload.key_benefits[0] if payload.key_benefits else payload.product_description, 58),
-            self._fit_line(concept.scene_description, 64),
+        ui_cards = [
+            ("Hooks", accent),
+            ("Copy", (98, 126, 234)),
+            ("Creative", (49, 163, 118)),
         ]
-        for index, line in enumerate(body_lines):
-            draw.text((88, body_top + (index * 54)), line, font=body_font, fill=text_dark)
+        cursor_x = screen_box[0] + 26
+        for label, fill in ui_cards:
+            box = (cursor_x, card_y, cursor_x + 150, card_y + 84)
+            draw.rounded_rectangle(box, radius=18, fill=fill)
+            draw.text((box[0] + 18, box[1] + 26), label, font=chip_font, fill=text_light)
+            cursor_x += 168
 
-        cta_box = (88, size[1] - 148, 340, size[1] - 84)
-        draw.rounded_rectangle(cta_box, radius=22, fill=accent)
-        draw.text((cta_box[0] + 28, cta_box[1] + 14), "Generate Ads", font=body_font, fill=text_light)
+        feature_box = (screen_box[0] + 26, card_y + 120, screen_box[2] - 26, card_y + 260)
+        draw.rounded_rectangle(feature_box, radius=20, fill=(230, 234, 240))
+        draw.text((feature_box[0] + 20, feature_box[1] + 18), self._fit_line(payload.product_description.split(".")[0], 42), font=label_font, fill=text_dark)
+        draw.text((feature_box[0] + 20, feature_box[1] + 62), self._fit_line(concept.scene_description, 54), font=label_font, fill=(74, 82, 96))
+
+        badge_box = (screen_box[0] + 26, screen_box[3] - 110, screen_box[0] + 220, screen_box[3] - 44)
+        draw.rounded_rectangle(badge_box, radius=22, fill=accent)
+        draw.text((badge_box[0] + 18, badge_box[1] + 18), "Creative System", font=chip_font, fill=text_light)
 
         image_data_url = self._to_data_url(image)
         error_note = previous.error if previous and previous.error else "Local image fallback used."
@@ -84,6 +108,13 @@ class LocalImageFallbackService:
         image.save(buffer, format="PNG")
         encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
         return f"data:image/png;base64,{encoded}"
+
+    def _draw_chip(self, draw: ImageDraw.ImageDraw, origin: tuple[int, int], text: str, font, text_color, fill_color) -> None:
+        font_size = getattr(font, "size", 18)
+        width = max(120, (len(text) * max(10, font_size // 2)) + 38)
+        box = (origin[0], origin[1], origin[0] + width, origin[1] + 42)
+        draw.rounded_rectangle(box, radius=18, fill=fill_color)
+        draw.text((box[0] + 16, box[1] + 10), text, font=font, fill=text_color)
 
     @staticmethod
     def _font(size: int, bold: bool = False):
@@ -114,13 +145,36 @@ class LocalImageFallbackService:
         return " ".join(line).rstrip(" ,.;:") + "..."
 
     @staticmethod
+    def _safe_color(color_str: str, default: str) -> str:
+        try:
+            ImageColor.getrgb(color_str)
+            return color_str
+        except ValueError:
+            return default
+
+    @staticmethod
     def _primary_color(payload: CreativeInput) -> str:
-        return payload.brand_colors[0] if payload.brand_colors else "#1F1A17"
+        if payload.brand_colors:
+            return LocalImageFallbackService._safe_color(payload.brand_colors[0], "#1F1A17")
+        return "#1F1A17"
 
     @staticmethod
     def _secondary_color(payload: CreativeInput) -> str:
-        return payload.brand_colors[1] if len(payload.brand_colors) > 1 else "#FFF7EF"
+        if len(payload.brand_colors) > 1:
+            return LocalImageFallbackService._safe_color(payload.brand_colors[1], "#FFF7EF")
+        return "#FFF7EF"
 
     @staticmethod
     def _accent_color(payload: CreativeInput) -> str:
-        return payload.brand_colors[2] if len(payload.brand_colors) > 2 else "#D0612A"
+        if len(payload.brand_colors) > 2:
+            return LocalImageFallbackService._safe_color(payload.brand_colors[2], "#D0612A")
+        return "#D0612A"
+
+    @staticmethod
+    def _value_phrase(payload: CreativeInput) -> str:
+        for benefit in payload.key_benefits:
+            normalized = benefit.strip()
+            if normalized and normalized.lower() not in {"cheap", "fast", "faster", "better", "affordable"}:
+                return normalized
+        sentence = payload.product_description.split(".")[0].strip()
+        return sentence or "Launch-ready ad production"

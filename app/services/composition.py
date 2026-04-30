@@ -32,7 +32,9 @@ class AdCompositionService:
         self,
         *,
         image_source: str,
+        primary_text: str,
         headline: str,
+        description: str,
         cta: str,
         brand_name: str,
         brand_assets: BrandAssets,
@@ -46,40 +48,82 @@ class AdCompositionService:
         width, height = canvas.size
         left, top, right, bottom = DEFAULT_SAFE_ZONES.get(platform, (56, 56, 56, 96))
         safe_box = (left, top, width - right, height - bottom)
+        primary_overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        primary_overlay_draw = ImageDraw.Draw(primary_overlay, "RGBA")
 
-        overlay_top = int(height * 0.56)
+        primary_overlay_draw.rectangle(
+            ((0, 0), (width, height)),
+            fill=(0, 0, 0, 48),
+        )
+        primary_overlay_draw.rounded_rectangle(
+            ((left, int(height * 0.08)), (width - right, int(height * 0.22))),
+            radius=28,
+            fill=(17, 17, 17, 112),
+        )
+        canvas = Image.alpha_composite(canvas, primary_overlay)
+        draw = ImageDraw.Draw(canvas, "RGBA")
+
+        overlay_top = int(height * 0.46)
         draw.rounded_rectangle(
             ((left, overlay_top), (width - right, height - bottom)),
             radius=36,
-            fill=(17, 17, 17, 180),
+            fill=(17, 17, 17, 196),
         )
 
         headline_font, headline_lines = self._fit_wrapped_text(
             draw=draw,
             text=headline,
             max_width=safe_box[2] - safe_box[0] - 40,
-            max_height=int(height * 0.2),
-            preferred_size=int(height * 0.07),
+            max_height=int(height * 0.16),
+            preferred_size=int(height * 0.062),
             min_size=28,
-            max_lines=3,
+            max_lines=2,
+        )
+        body_font, body_lines = self._fit_wrapped_text(
+            draw=draw,
+            text=primary_text,
+            max_width=safe_box[2] - safe_box[0] - 40,
+            max_height=int(height * 0.14),
+            preferred_size=int(height * 0.032),
+            min_size=20,
+            max_lines=4,
+        )
+        support_font, support_lines = self._fit_wrapped_text(
+            draw=draw,
+            text=description,
+            max_width=safe_box[2] - safe_box[0] - 40,
+            max_height=int(height * 0.06),
+            preferred_size=int(height * 0.024),
+            min_size=18,
+            max_lines=2,
         )
         brand_font = self._load_font(brand_assets.font_family, max(24, int(height * 0.028)))
         cta_font = self._load_font(brand_assets.cta_font_family or brand_assets.font_family, max(28, int(height * 0.03)))
 
-        cursor_y = overlay_top + 40
+        cursor_y = top + 34
         brand_logo_box = self._paste_logo(
             canvas=canvas,
             logo_source=brand_assets.logo_image,
             brand_name=brand_name,
             font=brand_font,
-            box=(left + 24, cursor_y, width - right - 24, cursor_y + 80),
+            box=(left + 24, cursor_y, width - right - 24, cursor_y + 72),
             text_color=brand_assets.text_color,
         )
-        cursor_y = brand_logo_box[3] + 24
+        cursor_y = max(overlay_top + 34, brand_logo_box[3] + 22)
 
         for line in headline_lines:
             draw.text((left + 24, cursor_y), line, font=headline_font, fill=brand_assets.text_color)
             cursor_y += self._line_height(headline_font) + 6
+
+        cursor_y += 12
+        for line in body_lines:
+            draw.text((left + 24, cursor_y), line, font=body_font, fill=brand_assets.text_color)
+            cursor_y += self._line_height(body_font) + 5
+
+        if support_lines:
+            cursor_y += 8
+            support_text = " ".join([line.strip() for line in support_lines if line.strip()])
+            draw.text((left + 24, cursor_y), support_text, font=support_font, fill=(228, 228, 228, 255))
 
         button_width = min(320, max(220, int(width * 0.24)))
         button_height = max(78, int(height * 0.072))
@@ -105,6 +149,8 @@ class AdCompositionService:
             width=width,
             height=height,
             headline_lines=headline_lines,
+            body_lines=body_lines,
+            supporting_text=" ".join([line.strip() for line in support_lines if line.strip()]) or None,
             cta_text=cta,
             brand_name=brand_name,
         )
@@ -296,6 +342,13 @@ class AdCompositionService:
         return draw.textbbox((0, 0), text, font=font)[2]
 
 
+def _safe_color(color_str: str, default: str) -> str:
+    try:
+        ImageColor.getrgb(color_str)
+        return color_str
+    except ValueError:
+        return default
+
 def build_brand_assets(
     *,
     brand_name: str,
@@ -305,10 +358,12 @@ def build_brand_assets(
 ) -> BrandAssets:
     colors = [value.strip() for value in brand_colors if value and value.strip()]
     fonts = [value.strip() for value in brand_fonts if value and value.strip()]
-    primary = colors[0] if len(colors) >= 1 else "#111111"
-    secondary = colors[1] if len(colors) >= 2 else "#F4F1EA"
-    accent = colors[2] if len(colors) >= 3 else "#E85D04"
+    
+    primary = _safe_color(colors[0], "#111111") if len(colors) >= 1 else "#111111"
+    secondary = _safe_color(colors[1], "#F4F1EA") if len(colors) >= 2 else "#F4F1EA"
+    accent = _safe_color(colors[2], "#E85D04") if len(colors) >= 3 else "#E85D04"
     text_color = "#111111" if secondary.lower() in {"#ffffff", "#f4f1ea", "#fffaf3"} else "#FFFFFF"
+    
     return BrandAssets(
         primary_color=primary,
         secondary_color=secondary,

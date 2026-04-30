@@ -8,6 +8,7 @@ from app.models import (
     HookType,
     MediaType,
     MessagingAngle,
+    Objective,
     Platform,
     VisualConcept,
     VisualConceptDraft,
@@ -42,7 +43,8 @@ class HookGenerator:
                 user_prompt=hook_prompt(payload),
             )
             result = normalize_hook_set(raw_result)
-        except Exception:
+        except Exception as exc:
+            print(f"[WARN] HookGenerator fallback in use: {type(exc).__name__}: {exc}")
             result = type("HookResult", (), {"hooks": _fallback_hooks(payload)})()
         hooks = _enforce_hook_diversity(_dedupe_by_text(result.hooks, key=lambda item: item.text), payload.hook_count)
         return hooks[: payload.hook_count]
@@ -59,7 +61,8 @@ class MessagingAngleGenerator:
                 user_prompt=angle_prompt(payload),
             )
             result = normalize_angle_set(raw_result)
-        except Exception:
+        except Exception as exc:
+            print(f"[WARN] MessagingAngleGenerator fallback in use: {type(exc).__name__}: {exc}")
             result = type("AngleResult", (), {"angles": _fallback_angles(payload)})()
         angles = _dedupe_by_text(result.angles, key=lambda item: item.name)
         return angles[: payload.angle_count]
@@ -81,21 +84,23 @@ class AdCopyGenerator:
                 user_prompt=ad_copy_prompt(payload, hooks, angles),
             )
             result = normalize_ad_copy_set(raw_result)
-        except Exception:
+        except Exception as exc:
+            print(f"[WARN] AdCopyGenerator fallback in use: {type(exc).__name__}: {exc}")
             result = type("CopyResult", (), {"ad_copies": _fallback_ad_copies(payload, hooks, angles)})()
 
         limits = PLATFORM_COPY_LIMITS[payload.platform]
         normalized: list[AdCopy] = []
         for index, item in enumerate(result.ad_copies, start=1):
+            polished = _polish_ad_copy(payload, item, index=index)
             normalized.append(
                 AdCopy(
                     copy_id=f"copy-{index:02d}",
-                    hook_text=item.hook_text,
-                    angle_name=item.angle_name,
-                    primary_text=smart_truncate(item.primary_text, limits["primary_text"]),
-                    headline=smart_truncate(item.headline, limits["headline"]),
-                    cta=smart_truncate(item.cta, 24),
-                    description=smart_truncate(item.description, limits["description"]),
+                    hook_text=polished.hook_text,
+                    angle_name=polished.angle_name,
+                    primary_text=smart_truncate(polished.primary_text, limits["primary_text"]),
+                    headline=smart_truncate(polished.headline, limits["headline"]),
+                    cta=smart_truncate(polished.cta, 24),
+                    description=smart_truncate(polished.description, limits["description"]),
                 )
             )
 
@@ -118,7 +123,8 @@ class VisualConceptGenerator:
                 user_prompt=visual_concept_prompt(payload, hooks, angles),
             )
             result = normalize_visual_concept_set(raw_result)
-        except Exception:
+        except Exception as exc:
+            print(f"[WARN] VisualConceptGenerator fallback in use: {type(exc).__name__}: {exc}")
             result = type("ConceptResult", (), {"visual_concepts": _fallback_visual_concepts(payload, hooks, angles)})()
 
         concepts: list[VisualConcept] = []
@@ -231,29 +237,29 @@ def _enforce_hook_diversity(hooks: list[Hook], target_count: int) -> list[Hook]:
 
 
 def _fallback_hooks(payload: CreativeInput) -> list[Hook]:
-    benefit = payload.key_benefits[0]
+    benefit = _value_phrase(payload)
     brand = payload.brand_name
-    product = payload.product_description.split(".")[0]
+    audience = _audience_phrase(payload.target_audience)
     templates = [
-        (HookType.CURIOSITY, f"Why are in-house marketers switching to {brand} before launching a new campaign?"),
-        (HookType.FEAR_BASED, f"Still shipping one ad angle at a time? That delay costs you paid traffic momentum."),
-        (HookType.BENEFIT_DRIVEN, f"Build more winning ads in minutes, not all afternoon."),
-        (HookType.CONTRARIAN, f"The best-performing ad system is not another prompt library. It is a production workflow."),
-        (HookType.SOCIAL_PROOF, f"Growth teams use systems like {brand} when they need more creative volume without hiring."),
-        (HookType.CURIOSITY, f"What changes when your team can turn one product brief into launch-ready ads?"),
+        (HookType.CURIOSITY, f"Why are {audience} switching to {brand} before launching new campaigns?"),
+        (HookType.FEAR_BASED, f"Still shipping one ad angle at a time? That slows down testing and wastes spend."),
+        (HookType.BENEFIT_DRIVEN, f"Build more launch-ready ads in less time with {benefit.lower()}."),
+        (HookType.CONTRARIAN, f"The winning creative workflow is not more prompts. It is faster production with better outputs."),
+        (HookType.SOCIAL_PROOF, f"Lean growth teams use tools like {brand} when they need more creative volume without adding headcount."),
+        (HookType.CURIOSITY, f"What changes when one brief becomes hooks, copy, concepts, and final ads in one run?"),
         (HookType.FEAR_BASED, f"Generic hooks make cold traffic scroll past before your value prop lands."),
-        (HookType.BENEFIT_DRIVEN, f"{benefit} with copy, concepts, and ready-to-review assets in one run."),
-        (HookType.CONTRARIAN, f"Pretty concept boards do not scale performance. Finished creatives do."),
-        (HookType.SOCIAL_PROOF, f"Teams running paid acquisition in-house need repeatable creative systems, not one-off ideas."),
+        (HookType.BENEFIT_DRIVEN, f"{benefit} across hooks, copy, concepts, and review-ready assets."),
+        (HookType.CONTRARIAN, f"Pretty idea boards do not scale performance. Finished ads do."),
+        (HookType.SOCIAL_PROOF, f"Teams buying traffic need repeatable creative systems, not one-off brainstorming."),
     ]
     return [
-        Hook(type=hook_type, text=text, rationale=f"Product-grounded fallback hook for {product.lower()}.")
+        Hook(type=hook_type, text=text, rationale="Fallback hook shaped for paid acquisition testing.")
         for hook_type, text in templates[: payload.hook_count]
     ]
 
 
 def _fallback_angles(payload: CreativeInput) -> list[MessagingAngle]:
-    first_benefit = payload.key_benefits[0]
+    first_benefit = _value_phrase(payload)
     angles = [
         MessagingAngle(
             name="Volume Without Headcount",
@@ -280,17 +286,26 @@ def _fallback_angles(payload: CreativeInput) -> list[MessagingAngle]:
 def _fallback_ad_copies(payload: CreativeInput, hooks: list[Hook], angles: list[MessagingAngle]) -> list[AdCopy]:
     limits = payload.copy_count
     copies: list[AdCopy] = []
+    primary_benefit = _value_phrase(payload)
+    benefit_snippet = smart_truncate(primary_benefit.rstrip(".") + ".", 48)
+    cta = _default_cta(payload)
+    audience = _audience_phrase(payload.target_audience)
     for index in range(limits):
         hook = hooks[index % len(hooks)]
         angle = angles[index % len(angles)]
+        headline = _fallback_headline(payload, angle.name, index=index)
+        description = _fallback_description(payload, angle.name)
         copies.append(
             AdCopy(
                 hook_text=hook.text,
                 angle_name=angle.name,
-                primary_text=f"{payload.brand_name} helps {payload.target_audience.lower()} turn one product brief into hooks, copy, concepts, and final ad assets faster. {payload.key_benefits[0]}.",
-                headline=f"{payload.brand_name} builds final ads faster",
-                cta="Generate Ads",
-                description=f"{angle.name} for {payload.platform.value} campaigns.",
+                primary_text=(
+                    f"For {audience.lower()}, {payload.brand_name} turns one brief into launch-ready ads faster. "
+                    f"{benefit_snippet}"
+                ),
+                headline=headline,
+                cta=cta,
+                description=description,
             )
         )
     return copies
@@ -324,3 +339,93 @@ def _fallback_visual_concepts(
             )
         )
     return concepts
+
+
+def _polish_ad_copy(payload: CreativeInput, item: AdCopy, *, index: int) -> AdCopy:
+    headline = " ".join(item.headline.split())
+    primary_text = " ".join(item.primary_text.split())
+    description = " ".join(item.description.split())
+    cta = " ".join(item.cta.split())
+
+    audience = _audience_phrase(payload.target_audience)
+    value_phrase = _value_phrase(payload)
+
+    generic_headlines = {
+        f"{payload.brand_name} builds final ads faster".lower(),
+        f"{payload.brand_name} creates ads faster".lower(),
+    }
+    if not headline or headline.lower() in generic_headlines:
+        headline = _fallback_headline(payload, item.angle_name, index=index)
+
+    if cta.lower() in {"generate ads", "generate", "click here", "learn", "buy"}:
+        cta = _default_cta(payload)
+
+    if payload.brand_name.lower() not in primary_text.lower():
+        primary_text = f"{payload.brand_name}: {primary_text}".strip(": ")
+
+    if len(primary_text.split()) < 8:
+        primary_text = (
+            f"{payload.brand_name} helps {audience.lower()} move from brief to live creative faster. "
+            f"{value_phrase.rstrip('.') }."
+        )
+
+    if not description or description.lower() in {"performance-focused creative variant.", f"{item.angle_name.lower()} for {payload.platform.value} campaigns."}:
+        description = _fallback_description(payload, item.angle_name)
+
+    return AdCopy(
+        hook_text=item.hook_text,
+        angle_name=item.angle_name,
+        primary_text=primary_text,
+        headline=headline,
+        cta=cta,
+        description=description,
+    )
+
+
+def _fallback_headline(payload: CreativeInput, angle_name: str, *, index: int) -> str:
+    headlines = [
+        f"Launch more ads with {payload.brand_name}",
+        f"{payload.brand_name} speeds up creative production",
+        f"From brief to ad set, faster",
+        f"More creative output, less bottleneck",
+        f"Build campaign-ready ads in less time",
+    ]
+    if "quality" in angle_name.lower():
+        return f"Sharper ads for cold traffic"
+    return headlines[index % len(headlines)]
+
+
+def _fallback_description(payload: CreativeInput, angle_name: str) -> str:
+    primary_benefit = _value_phrase(payload).rstrip(".")
+    return f"{angle_name} built for {payload.platform.value} campaigns focused on {primary_benefit.lower()}."
+
+
+def _default_cta(payload: CreativeInput) -> str:
+    if payload.objective == Objective.CONVERSIONS:
+        return "Get Started"
+    if payload.objective == Objective.TRAFFIC:
+        return "Learn More"
+    return "See How It Works"
+
+
+def _audience_phrase(audience: str) -> str:
+    normalized = " ".join(audience.split())
+    if not normalized:
+        return "growth teams"
+    stripped = normalized.replace(" ", "")
+    if all(char.isdigit() or char in "-+" for char in stripped):
+        return "growth teams"
+    return normalized
+
+
+def _value_phrase(payload: CreativeInput) -> str:
+    preferred = next((item for item in payload.key_benefits if item and len(item.strip()) >= 5), "").strip()
+    if preferred.lower() in {"cheap", "faster", "fast", "better", "affordable"}:
+        preferred = ""
+    if preferred:
+        return preferred.rstrip(".")
+
+    sentence = payload.product_description.split(".")[0].strip()
+    if sentence:
+        return sentence[0].upper() + sentence[1:]
+    return "faster ad production"

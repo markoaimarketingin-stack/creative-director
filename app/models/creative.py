@@ -115,7 +115,7 @@ class VisualConceptDraft(BaseModel):
     scene_description: str = Field(..., min_length=10)
     camera_angle: str = Field(..., min_length=3)
     background_setting: str = Field(..., min_length=5)
-    color_palette: list[str] = Field(..., min_length=2)
+    color_palette: list[str] = Field(..., min_length=1)
     mood: str = Field(..., min_length=3)
     style_reference: str = Field(..., min_length=3)
     aspect_ratio: str = Field(..., min_length=3)
@@ -159,6 +159,8 @@ class RenderedAd(BaseModel):
     width: int
     height: int
     headline_lines: list[str] = Field(default_factory=list)
+    body_lines: list[str] = Field(default_factory=list)
+    supporting_text: str | None = None
     cta_text: str
     brand_name: str
 
