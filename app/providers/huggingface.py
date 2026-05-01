@@ -29,13 +29,16 @@ class HuggingFaceClient:
         concepts: list[VisualConcept],
         *,
         platform: Platform,
+        sample_images: list[str] | None = None,
     ) -> list[GeneratedCreative]:
-        tasks = [self.generate_creative(concept) for concept in concepts]
+        tasks = [self.generate_creative(concept, sample_images=sample_images) for concept in concepts]
         return await asyncio.gather(*tasks)
 
     async def generate_creative(
         self,
         concept: VisualConcept,
+        *,
+        sample_images: list[str] | None = None,
     ) -> GeneratedCreative:
         if not self._api_key:
             return GeneratedCreative(
@@ -59,7 +62,9 @@ class HuggingFaceClient:
                     "Authorization": f"Bearer {self._api_key}",
                     "Accept": "*/*",
                 }
-                payload = {"inputs": concept.generation_prompt}
+                # Add aspect ratio hint to the prompt for models like Flux
+                prompt = f"{concept.generation_prompt} aspect ratio {concept.aspect_ratio}"
+                payload = {"inputs": prompt}
                 url = self._get_url(model)
                 
                 response = await self._client.post(

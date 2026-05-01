@@ -159,7 +159,12 @@ function toPublicAssetUrl(rawPath) {
 function showDashboard() {
   heroCard.classList.remove("hidden");
   loadingPanel.classList.add("hidden");
-  resultsPanel.classList.add("hidden");
+  // Only hide results if we haven't generated anything yet
+  if (!chatContext.campaign) {
+    resultsPanel.classList.add("hidden");
+  } else {
+    resultsPanel.classList.remove("hidden");
+  }
   if (historyPanel) historyPanel.classList.add("hidden");
   dashboardNav.classList.add("active");
   document.querySelectorAll(".specialist").forEach((n) => n.classList.remove("active"));
@@ -237,9 +242,32 @@ function fileNameFromPath(rawPath, fallback) {
   return parts[parts.length - 1] || fallback;
 }
 
+async function downloadAsset(event, url, filename) {
+  event.preventDefault();
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Download failed");
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (e) {
+    console.error("Download error:", e);
+    window.open(url, "_blank");
+  }
+}
+window.downloadAsset = downloadAsset;
+
 function downloadButton(url, filename, label) {
   if (!url) return "";
-  return `<a class="download-btn" href="${url}" download="${esc(filename)}">${esc(label)}</a>`;
+  const escUrl = esc(url);
+  const escFile = esc(filename);
+  return `<button class="download-btn" onclick="downloadAsset(event, '${escUrl}', '${escFile}')">${esc(label)}</button>`;
 }
 
 function renderScoreNote(asset) {

@@ -35,8 +35,9 @@ class NanoBananaClient:
         concepts: list[VisualConcept],
         *,
         platform: Platform,
+        sample_images: list[str] | None = None,
     ) -> list[GeneratedCreative]:
-        tasks = [self.generate_creative(concept, platform=platform) for concept in concepts]
+        tasks = [self.generate_creative(concept, platform=platform, sample_images=sample_images) for concept in concepts]
         return await asyncio.gather(*tasks)
 
     async def generate_creative(
@@ -44,6 +45,7 @@ class NanoBananaClient:
         concept: VisualConcept,
         *,
         platform: Platform,
+        sample_images: list[str] | None = None,
     ) -> GeneratedCreative:
         if not self._api_key:
             return GeneratedCreative(

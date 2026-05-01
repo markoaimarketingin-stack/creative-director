@@ -19,10 +19,10 @@ class CampaignStorage:
         self._output_root.mkdir(parents=True, exist_ok=True)
         self._s3_bucket_name = settings.s3_bucket_name
         self._s3_client = (
-        boto3.client("s3", region_name=settings.s3_region)
-        if settings.s3_bucket_name and boto3 is not None
-        else None
-    )
+            boto3.client("s3", region_name=settings.s3_region)
+            if settings.s3_bucket_name and boto3 is not None
+            else None
+        )
 
     def save_package(self, package: CampaignPackage) -> str:
         campaign_dir = self.build_campaign_dir(package.campaign_slug, package.created_at)
@@ -81,6 +81,11 @@ class CampaignStorage:
                     continue
                 score = row.get("score", {})
                 generated = row.get("generated_creative", {})
+                
+                # Normalize paths to web-accessible URLs
+                raw_rendered = (row.get("rendered_ad") or {}).get("image_path")
+                raw_preview = (row.get("preview") or {}).get("image_path")
+                
                 items.append(
                     TopCreativeItem(
                         campaign_name=row.get("campaign_name", creatives_file.parent.parent.name),
@@ -92,14 +97,25 @@ class CampaignStorage:
                         cta=row.get("cta"),
                         image_urls=generated.get("image_urls", []),
                         video_urls=generated.get("video_urls", []),
-                        rendered_image_path=(row.get("rendered_ad") or {}).get("image_path"),
-                        preview_image_path=(row.get("preview") or {}).get("image_path"),
+                        rendered_image_path=self._normalize_web_path(raw_rendered),
+                        preview_image_path=self._normalize_web_path(raw_preview),
                         output_directory=str(creatives_file.parent),
                     )
                 )
 
         ranked = sorted(items, key=lambda item: item.total_score, reverse=True)
         return TopCreativesResponse(items=ranked[:limit])
+
+    def _normalize_web_path(self, path_str: str | None) -> str | None:
+        if not path_str:
+            return None
+        try:
+            path = Path(path_str)
+            if path.is_relative_to(self._output_root):
+                return f"/output/{path.relative_to(self._output_root).as_posix()}"
+        except Exception:
+            pass
+        return path_str
 
     def _write_json(self, path: Path, payload: Any) -> None:
         path.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")

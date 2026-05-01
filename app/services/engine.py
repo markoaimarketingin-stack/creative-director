@@ -16,6 +16,7 @@ from app.models import (
     Platform,
     VisualConcept,
 )
+from app.providers.gemini_vision import GeminiVisionProvider
 from app.providers.groq_llm import GroqLLMProvider
 from app.providers.huggingface import HuggingFaceClient
 from app.providers.nanobanana import NanoBananaClient
@@ -48,6 +49,7 @@ class CreativeDirectorEngine:
         preview_generator: AdPreviewGenerator | None = None,
         exporter: MetaAdsCsvExporter | None = None,
         image_fallback_service: LocalImageFallbackService | None = None,
+        gemini_vision: GeminiVisionProvider | None = None,
     ) -> None:
         self._hook_generator = hook_generator
         self._angle_generator = angle_generator
@@ -56,6 +58,7 @@ class CreativeDirectorEngine:
         self._nanobanana_client = nanobanana_client
         self._vertex_client = vertex_client
         self._hf_client = hf_client
+        self._gemini_vision = gemini_vision
         self._scoring_service = scoring_service
         self._storage = storage
         self._database = database
@@ -74,6 +77,15 @@ class CreativeDirectorEngine:
         concept_task = asyncio.create_task(self._visual_concept_generator.generate(payload, hooks, angles))
         ad_copies, visual_concepts = await asyncio.gather(ad_copy_task, concept_task)
 
+        # 🚀 NEW: Analyze reference images using Gemini Vision if provided
+        if payload.sample_images and self._gemini_vision:
+            print(f"[INFO] Analyzing {len(payload.sample_images)} reference images...")
+            description = await self._gemini_vision.describe_images(payload.sample_images)
+            if description:
+                print(f"[INFO] Visual Reference: {description[:100]}...")
+                for concept in visual_concepts:
+                    concept.generation_prompt += f" Visual Reference style: {description}"
+
         generated_creatives = []
         if self._vertex_client and getattr(self._vertex_client, "_project_id", None):
             generated_creatives = await self._generate_images_with_timeout(
@@ -90,6 +102,7 @@ class CreativeDirectorEngine:
                     self._nanobanana_client.generate_batch(
                         visual_concepts,
                         platform=payload.platform,
+                        sample_images=payload.sample_images,
                     )
                 )
                 if fallback_creatives:
@@ -101,6 +114,7 @@ class CreativeDirectorEngine:
                     self._hf_client.generate_batch(
                         visual_concepts,
                         platform=payload.platform,
+                        sample_images=payload.sample_images,
                     )
                 )
                 if fallback_creatives:
@@ -223,9 +237,19 @@ class CreativeDirectorEngine:
                 aspect_ratio=asset.visual_concept.aspect_ratio,
                 campaign_dir=campaign_dir,
             )
+            
+            # Normalize rendered path for frontend
+            if rendered_ad.image_path:
+                rel_path = Path(rendered_ad.image_path).relative_to(self._storage._output_root)
+                rendered_ad.image_path = f"/output/{rel_path.as_posix()}"
+                
             updated_asset = asset.model_copy(update={"rendered_ad": rendered_ad})
             if self._preview_generator:
                 preview = self._preview_generator.generate(asset=updated_asset, campaign_dir=campaign_dir)
+                # Normalize preview path for frontend
+                if preview.image_path:
+                    rel_preview = Path(preview.image_path).relative_to(self._storage._output_root)
+                    preview.image_path = f"/output/{rel_preview.as_posix()}"
                 updated_asset = updated_asset.model_copy(update={"preview": preview})
             rendered_assets.append(updated_asset)
         return rendered_assets
@@ -298,6 +322,7 @@ class ServiceContainer:
         database = CampaignDatabase(settings)
         vertex_client = VertexAIClient(settings)
         hf_client = HuggingFaceClient(settings)
+        gemini_vision = GeminiVisionProvider(settings)
         composition_service = AdCompositionService(settings.output_root)
         preview_generator = AdPreviewGenerator()
         exporter = MetaAdsCsvExporter()
@@ -318,9 +343,10 @@ class ServiceContainer:
             preview_generator=preview_generator,
             exporter=exporter,
             image_fallback_service=image_fallback_service,
+            gemini_vision=gemini_vision,
         )
         self.engine._image_provider_timeout_seconds = settings.image_provider_timeout_seconds
-        self._closables = [llm, nanobanana, vertex_client, hf_client, database]
+        self._closables = [llm, nanobanana, vertex_client, hf_client, database, gemini_vision]
 
     async def aclose(self) -> None:
         for resource in self._closables:

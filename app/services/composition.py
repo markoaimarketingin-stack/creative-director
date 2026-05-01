@@ -44,98 +44,95 @@ class AdCompositionService:
         campaign_dir: Path,
     ) -> RenderedAd:
         canvas = self._load_base_image(image_source, aspect_ratio=aspect_ratio)
-        draw = ImageDraw.Draw(canvas, "RGBA")
         width, height = canvas.size
         left, top, right, bottom = DEFAULT_SAFE_ZONES.get(platform, (56, 56, 56, 96))
-        safe_box = (left, top, width - right, height - bottom)
-        primary_overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-        primary_overlay_draw = ImageDraw.Draw(primary_overlay, "RGBA")
-
-        primary_overlay_draw.rectangle(
-            ((0, 0), (width, height)),
-            fill=(0, 0, 0, 48),
-        )
-        primary_overlay_draw.rounded_rectangle(
-            ((left, int(height * 0.08)), (width - right, int(height * 0.22))),
-            radius=28,
-            fill=(17, 17, 17, 112),
-        )
-        canvas = Image.alpha_composite(canvas, primary_overlay)
+        
+        # Create a drawing context for the canvas
         draw = ImageDraw.Draw(canvas, "RGBA")
 
-        overlay_top = int(height * 0.46)
-        draw.rounded_rectangle(
-            ((left, overlay_top), (width - right, height - bottom)),
-            radius=36,
-            fill=(17, 17, 17, 196),
-        )
+        # 1. Add a subtle bottom-to-top gradient (scrim) for text readability at the bottom
+        scrim = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        scrim_draw = ImageDraw.Draw(scrim, "RGBA")
+        
+        # Draw a smooth gradient from bottom (semi-transparent black) to middle (transparent)
+        gradient_height = int(height * 0.45)
+        for y in range(height - gradient_height, height):
+            alpha = int(180 * ((y - (height - gradient_height)) / gradient_height))
+            scrim_draw.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
+        
+        canvas = Image.alpha_composite(canvas, scrim)
+        draw = ImageDraw.Draw(canvas, "RGBA")
 
+        # 2. Fit fonts and text
         headline_font, headline_lines = self._fit_wrapped_text(
             draw=draw,
             text=headline,
-            max_width=safe_box[2] - safe_box[0] - 40,
-            max_height=int(height * 0.16),
-            preferred_size=int(height * 0.062),
-            min_size=28,
+            max_width=width - left - right - 48,
+            max_height=int(height * 0.15),
+            preferred_size=int(height * 0.055),
+            min_size=32,
             max_lines=2,
         )
         body_font, body_lines = self._fit_wrapped_text(
             draw=draw,
             text=primary_text,
-            max_width=safe_box[2] - safe_box[0] - 40,
-            max_height=int(height * 0.14),
-            preferred_size=int(height * 0.032),
+            max_width=width - left - right - 48,
+            max_height=int(height * 0.12),
+            preferred_size=int(height * 0.028),
             min_size=20,
-            max_lines=4,
+            max_lines=3,
         )
         support_font, support_lines = self._fit_wrapped_text(
             draw=draw,
             text=description,
-            max_width=safe_box[2] - safe_box[0] - 40,
-            max_height=int(height * 0.06),
-            preferred_size=int(height * 0.024),
-            min_size=18,
-            max_lines=2,
+            max_width=width - left - right - 48,
+            max_height=int(height * 0.05),
+            preferred_size=int(height * 0.022),
+            min_size=16,
+            max_lines=1,
         )
-        brand_font = self._load_font(brand_assets.font_family, max(24, int(height * 0.028)))
-        cta_font = self._load_font(brand_assets.cta_font_family or brand_assets.font_family, max(28, int(height * 0.03)))
+        brand_font = self._load_font(brand_assets.font_family, max(32, int(height * 0.032)))
+        cta_font = self._load_font(brand_assets.cta_font_family or brand_assets.font_family, max(24, int(height * 0.026)))
 
-        cursor_y = top + 34
+        # 3. Position Logo/Brand at Top Left (Clean integration)
+        logo_y = top + 24
         brand_logo_box = self._paste_logo(
             canvas=canvas,
             logo_source=brand_assets.logo_image,
             brand_name=brand_name,
             font=brand_font,
-            box=(left + 24, cursor_y, width - right - 24, cursor_y + 72),
-            text_color=brand_assets.text_color,
+            box=(left + 24, logo_y, width - right - 24, logo_y + 80),
+            text_color="#FFFFFF", # Force white for premium contrast on images
         )
-        cursor_y = max(overlay_top + 34, brand_logo_box[3] + 22)
 
+        # 4. Draw Headline with subtle shadow for "Floating" premium look
+        cursor_y = height - bottom - int(height * 0.32)
         for line in headline_lines:
-            draw.text((left + 24, cursor_y), line, font=headline_font, fill=brand_assets.text_color)
-            cursor_y += self._line_height(headline_font) + 6
+            # Subtle shadow
+            draw.text((left + 26, cursor_y + 2), line, font=headline_font, fill=(0, 0, 0, 128))
+            draw.text((left + 24, cursor_y), line.upper(), font=headline_font, fill="#FFFFFF")
+            cursor_y += self._line_height(headline_font) + 4
 
-        cursor_y += 12
+        # 5. Draw Primary Text
+        cursor_y += 8
         for line in body_lines:
-            draw.text((left + 24, cursor_y), line, font=body_font, fill=brand_assets.text_color)
-            cursor_y += self._line_height(body_font) + 5
+            draw.text((left + 26, cursor_y + 1), line, font=body_font, fill=(0, 0, 0, 128))
+            draw.text((left + 24, cursor_y), line, font=body_font, fill="#E0E0E0")
+            cursor_y += self._line_height(body_font) + 4
 
-        if support_lines:
-            cursor_y += 8
-            support_text = " ".join([line.strip() for line in support_lines if line.strip()])
-            draw.text((left + 24, cursor_y), support_text, font=support_font, fill=(228, 228, 228, 255))
-
-        button_width = min(320, max(220, int(width * 0.24)))
-        button_height = max(78, int(height * 0.072))
+        # 6. Draw CTA (Modern Outline/Ghost Button Style)
+        button_width = min(400, max(260, int(width * 0.3)))
+        button_height = max(70, int(height * 0.065))
         button_x = left + 24
-        button_y = height - bottom - button_height - 24
+        button_y = height - bottom - button_height - 12
+        
         self._draw_cta_button(
             draw=draw,
             box=(button_x, button_y, button_x + button_width, button_y + button_height),
             text=cta,
             font=cta_font,
             fill_color=brand_assets.accent_color,
-            text_color=brand_assets.secondary_color,
+            text_color="#FFFFFF",
         )
 
         rendered_dir = campaign_dir / "rendered"
@@ -314,8 +311,10 @@ class AdCompositionService:
         candidates = [font_path] if font_path else []
         candidates.extend(
             [
+                "C:/Windows/Fonts/timesbd.ttf", # Times New Roman Bold (Premium Serif)
+                "C:/Windows/Fonts/georgiab.ttf", # Georgia Bold (Premium Serif)
+                "C:/Windows/Fonts/segoeuib.ttf", # Segoe UI Bold (Modern Sans)
                 "C:/Windows/Fonts/arialbd.ttf",
-                "C:/Windows/Fonts/segoeuib.ttf",
                 "C:/Windows/Fonts/arial.ttf",
             ]
         )
@@ -323,6 +322,7 @@ class AdCompositionService:
             if not candidate:
                 continue
             try:
+                # Use absolute paths if possible
                 return ImageFont.truetype(candidate, size=size)
             except OSError:
                 continue
