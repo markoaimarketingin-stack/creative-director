@@ -27,7 +27,7 @@
           <div class="hero-head">
             <h1>Strategy Dashboard</h1>
             <div class="dashboard-actions">
-              <button class="top-pill" type="button">Knowledge Base</button>
+              <button id="btn-knowledge-base" class="top-pill" type="button">Knowledge Base</button>
               <button class="top-pill" type="button">Train Model</button>
             </div>
           </div>
@@ -58,6 +58,7 @@
                 <span>Sample Context Images (Upload)</span>
                 <input id="f-samples" type="file" multiple accept="image/*">
                 <small id="f-samples-hint">Optional. Up to 4 images, max 5MB each, used as visual references for Vertex AI.</small>
+                <div id="f-samples-list" class="samples-list" aria-live="polite" style="margin-top:6px;"></div>
               </label>
             </div>
             <div class="count-grid">
@@ -124,6 +125,21 @@
       </footer>
     </aside>
   </main>
+  <div id="imageModal" class="image-modal hidden" onclick="if(event.target === this) closeImageModal()">
+    <div class="image-modal-content">
+      <button class="modal-close" onclick="closeImageModal()">✕</button>
+      <h2 id="modalTitle">Creative Preview</h2>
+      <img id="modalImage" src="" alt="Preview" class="modal-image">
+    </div>
+  </div>
+  <div id="kbModal" class="image-modal hidden" onclick="if(event.target === this) closeKbModal()">
+    <div class="image-modal-content" style="max-width:900px;">
+      <button class="modal-close" onclick="closeKbModal()">✕</button>
+      <h2>Knowledge Base</h2>
+      <p style="color:var(--muted,#666);margin-top:6px;margin-bottom:12px;">Select one or more images to use as sample context for generation.</p>
+      <div id="kb-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;max-height:60vh;overflow:auto;padding:6px;"></div>
+    </div>
+  </div>
   <script defer src="/frontend/env-config.js?v=20260429c"></script>
   <script defer src="/frontend/app.js?v=20260430d"></script>
 </body>

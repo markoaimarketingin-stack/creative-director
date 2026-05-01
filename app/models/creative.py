@@ -251,7 +251,9 @@ class TopCreativeItem(BaseModel):
     platform: Platform
     concept_id: str
     total_score: int
+    primary_text: str | None = None
     headline: str | None = None
+    description: str | None = None
     cta: str | None = None
     image_urls: list[str] = Field(default_factory=list)
     video_urls: list[str] = Field(default_factory=list)
@@ -262,3 +264,22 @@ class TopCreativeItem(BaseModel):
 
 class TopCreativesResponse(BaseModel):
     items: list[TopCreativeItem]
+
+
+class CampaignHistoryItem(BaseModel):
+    campaign_name: str
+    campaign_slug: str
+    created_at: str
+    platform: Platform
+    objective: str
+    top_score: int
+    total_creatives: int
+    hooks: list[Hook] = Field(default_factory=list)
+    angles: list[MessagingAngle] = Field(default_factory=list)
+    visual_concepts: list[VisualConcept] = Field(default_factory=list)
+    creatives: list[dict[str, Any]] = Field(default_factory=list)
+    output_directory: str
+
+
+class CampaignHistoryResponse(BaseModel):
+    items: list[CampaignHistoryItem]

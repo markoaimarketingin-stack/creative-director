@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 
 from app.api.auth import require_api_auth
-from app.models import CampaignPackage, CreativeInput, Platform, TopCreativesResponse
+from app.models import CampaignPackage, CreativeInput, Platform, TopCreativesResponse, CampaignHistoryResponse
 from app.services.engine import CreativeDirectorEngine, ServiceContainer
 
 router = APIRouter(tags=["creatives"])
@@ -38,9 +38,43 @@ async def generate_creatives(
 
 @router.get("/top-creatives", response_model=TopCreativesResponse)
 async def get_top_creatives(
-    limit: int = Query(default=10, ge=1, le=50),
+    limit: int | None = Query(default=None, ge=1, le=500),
     platform: Platform | None = None,
     _actor: str = Depends(require_api_auth),
     engine: CreativeDirectorEngine = Depends(get_engine),
 ) -> TopCreativesResponse:
     return engine.get_top_creatives(limit=limit, platform=platform)
+
+
+@router.get("/campaign-history", response_model=CampaignHistoryResponse)
+async def get_campaign_history(
+    limit: int | None = Query(default=None, ge=1, le=500),
+    platform: Platform | None = None,
+    _actor: str = Depends(require_api_auth),
+    engine: CreativeDirectorEngine = Depends(get_engine),
+) -> CampaignHistoryResponse:
+    return engine.get_campaign_history(limit=limit, platform=platform)
+
+
+@router.post("/knowledge-base/images")
+async def upload_kb_image(
+    file: UploadFile = File(...),
+    title: str | None = Form(None),
+    _actor: str = Depends(require_api_auth),
+    engine: CreativeDirectorEngine = Depends(get_engine),
+) -> dict:
+    """Upload an image to the knowledge base."""
+    try:
+        data = await file.read()
+        entry = engine._storage.save_kb_image_from_bytes(file.filename, data, title=title)
+        return entry
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/knowledge-base/images")
+async def list_kb_images(
+    _actor: str = Depends(require_api_auth),
+    engine: CreativeDirectorEngine = Depends(get_engine),
+):
+    return {"items": engine._storage.list_kb_images()}

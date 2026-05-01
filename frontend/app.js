@@ -1,4 +1,4 @@
-let API_BASE_URL = (
+﻿let API_BASE_URL = (
   window.__APP_CONFIG__ &&
   typeof window.__APP_CONFIG__.BACKEND_URL === "string" &&
   window.__APP_CONFIG__.BACKEND_URL.trim()
@@ -36,6 +36,7 @@ const chatPanel = document.querySelector(".chat-panel");
 const historyPanel = byId("history-panel");
 const navExecutionHistory = byId("nav-execution-history");
 const historyOutput = byId("history-output");
+const btnKnowledgeBase = byId("btn-knowledge-base");
 const requiredFieldIds = ["f-brand", "f-desc", "f-audience", "f-benefits"];
 
 const MAX_SAMPLE_IMAGES = 4;
@@ -53,6 +54,53 @@ const countTargets = {
 
 let chatContext = {};
 let chatSessionId = localStorage.getItem("chat_session_id");
+let selectedKnowledgeImages = [];
+
+function useKnowledgeImage(url) {
+  if (!url) return;
+  if (selectedKnowledgeImages.includes(url)) {
+    setSampleHint("Image already added to references.");
+    return;
+  }
+  if (selectedKnowledgeImages.length >= MAX_SAMPLE_IMAGES) {
+    setSampleHint(`Maximum ${MAX_SAMPLE_IMAGES} reference images allowed.`, true);
+    return;
+  }
+  selectedKnowledgeImages.push(url);
+  updateSamplesList();
+  setSampleHint(`Using ${selectedKnowledgeImages.length} reference image(s) from knowledge base.`);
+  // Refresh KB grid if modal is open to update button states
+  const kbGrid = document.getElementById("kb-grid");
+  if (kbGrid && kbGrid.innerHTML) {
+    fetchKnowledgeBaseImages();
+  }
+}
+
+function removeKnowledgeImage(url) {
+  selectedKnowledgeImages = selectedKnowledgeImages.filter((u) => u !== url);
+  updateSamplesList();
+  setSampleHint(selectedKnowledgeImages.length ? `Using ${selectedKnowledgeImages.length} reference image(s).` : "Optional. Up to 4 images, max 5MB each, used as visual references for Vertex AI.");
+  // Refresh KB grid if modal is open to update button states
+  const kbGrid = document.getElementById("kb-grid");
+  if (kbGrid && kbGrid.innerHTML) {
+    fetchKnowledgeBaseImages();
+  }
+}
+
+function updateSamplesList() {
+  const container = byId("f-samples-list");
+  if (!container) return;
+  if (!selectedKnowledgeImages.length) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = selectedKnowledgeImages.map((url) => `
+    <div class="sample-thumb" style="display:inline-block;margin-right:8px;">
+      <img src="${esc(url)}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #e5e5e5;" />
+      <div style="text-align:center;font-size:0.8em;margin-top:4px;"><button class="link-btn" onclick="removeKnowledgeImage('${esc(url)}')">Remove</button></div>
+    </div>
+  `).join("");
+}
 
 function esc(v) {
   return String(v)
@@ -227,6 +275,100 @@ function activateTab(tab) {
   resultsTitle.textContent = "Campaign Output";
 }
 
+function toggleCampaign(id) {
+  const contentElem = document.getElementById(id);
+  if (contentElem) {
+    contentElem.classList.toggle("expanded");
+    const headerElem = contentElem.previousElementSibling;
+    const icon = headerElem?.querySelector(".toggle-icon");
+    if (icon) {
+      icon.style.transform = contentElem.classList.contains("expanded") ? "rotate(180deg)" : "rotate(0deg)";
+    }
+  }
+}
+
+function openImageModal(imageUrl, title) {
+  const modal = document.getElementById("imageModal");
+  const modalImage = document.getElementById("modalImage");
+  const modalTitle = document.getElementById("modalTitle");
+  
+  if (modal && modalImage) {
+    modalImage.src = imageUrl;
+    modalTitle.textContent = title || "Creative Preview";
+    modal.classList.remove("hidden");
+  }
+}
+
+function closeImageModal() {
+  const modal = document.getElementById("imageModal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+function openKbModal() {
+  const modal = document.getElementById("kbModal");
+  const grid = document.getElementById("kb-grid");
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+  if (grid) {
+    grid.innerHTML = `<div style="padding:12px;color:var(--muted,#666);">Loading...</div>`;
+  }
+  fetchKnowledgeBaseImages();
+}
+
+function closeKbModal() {
+  const modal = document.getElementById("kbModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function fetchKnowledgeBaseImages() {
+  try {
+    const endpoint = (API_BASE_URL ? API_BASE_URL.replace(/\/+$/,'') : '') + '/knowledge-base/images';
+    const res = await fetch(endpoint);
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    const data = await res.json();
+    const items = data?.items || [];
+    renderKbGrid(items);
+  } catch (e) {
+    const grid = document.getElementById("kb-grid");
+    if (grid) grid.innerHTML = `<div class="card"><p>Error loading images.</p></div>`;
+    console.error("KB fetch error", e);
+  }
+}
+
+function renderKbGrid(items) {
+  const grid = document.getElementById("kb-grid");
+  if (!grid) return;
+  if (!items || !items.length) {
+    grid.innerHTML = `<div class="card"><p>No knowledge base images found.</p></div>`;
+    return;
+  }
+
+  grid.innerHTML = items.map((it) => {
+    const url = toPublicAssetUrl(it.web_path || it.webPath || it.path || "");
+    const title = esc(it.title || it.filename || "Untitled");
+    const escUrl = esc(url);
+    const isSelected = selectedKnowledgeImages.includes(url);
+    const useButtonHtml = isSelected
+      ? `<button class="link-btn" disabled style="opacity:0.5;cursor:not-allowed;">Already in use</button>`
+      : `<button class="link-btn" onclick="useKnowledgeImage('${escUrl}')">Use in generation</button>`;
+    return `
+      <div class="card" style="text-align:center;padding:8px;">
+        <div style="height:120px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+          <img src="${escUrl}" alt="${title}" style="max-width:100%;max-height:120px;object-fit:cover;border-radius:6px;" onclick="openImageModal('${escUrl}','${title}')" />
+        </div>
+        <div style="margin-top:8px;font-weight:600;">${title}</div>
+        <div style="margin-top:8px;display:flex;gap:6px;justify-content:center;">
+          <button class="link-btn" onclick="openImageModal('${escUrl}','${title}')">View</button>
+          ${useButtonHtml}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
 function list(target, items, render) {
   if (!items || !items.length) {
     empty(target, "No items.");
@@ -343,6 +485,7 @@ function renderAll(data) {
             ${asset.generated_creative?.error ? `<div class="mono"><strong>Provider Error:</strong> ${esc(asset.generated_creative.error)}</div>` : ""}
             <p><strong>Concept:</strong> ${esc(asset.visual_concept?.scene_description || "-")}</p>
             <div class="download-row">
+              ${renderedUrl ? `<button class="view-btn" onclick="openImageModal('${esc(renderedUrl)}','${esc(asset.headline || 'Rendered ad')}')">View</button>` : ''}
               ${downloadButton(renderedUrl, fileNameFromPath(asset.rendered_ad?.image_path, `${asset.concept_id}.png`), "Download PNG")}
               ${downloadButton(previewUrl, fileNameFromPath(asset.preview?.image_path, `${asset.concept_id}-preview.png`), "Download Preview")}
             </div>
@@ -519,6 +662,11 @@ async function buildPayload() {
     );
   }
 
+    // Include selected knowledge-base image URLs as references as well
+    if (selectedKnowledgeImages && selectedKnowledgeImages.length) {
+      for (const u of selectedKnowledgeImages) payload.sample_images.push(u);
+    }
+
   return payload;
 }
 
@@ -552,7 +700,7 @@ function wireEvents() {
       showHistory();
       empty(historyOutput, "Loading execution history...");
       try {
-        const res = await fetch(`${API_BASE_URL}/top-creatives`);
+        const res = await fetch(`${API_BASE_URL}/campaign-history`);
         if (!res.ok) throw new Error(await parseErrorResponse(res));
         const data = await res.json();
 
@@ -561,27 +709,104 @@ function wireEvents() {
           return;
         }
 
-        historyOutput.innerHTML = data.items.map((item) => {
-          const primaryImage = toPublicAssetUrl(item.rendered_image_path || item.preview_image_path || (item.image_urls || [])[0]);
-          const renderedUrl = toPublicAssetUrl(item.rendered_image_path);
-          const previewUrl = toPublicAssetUrl(item.preview_image_path);
+        historyOutput.innerHTML = data.items.map((campaign, idx) => {
+          const expandId = `campaign-${idx}`;
+          const primaryImage = campaign.creatives.length > 0 
+            ? (campaign.creatives[0].rendered_image_path || campaign.creatives[0].preview_image_path)
+            : null;
+          const primaryImageUrl = toPublicAssetUrl(primaryImage);
+          
           return `
-            <div class="card">
-              <div class="history-head">
-                <h3>${esc(item.campaign_name)}</h3>
-                <span class="metric-pill">Score ${esc(item.total_score)}</span>
+            <div class="card campaign-card">
+              <div class="campaign-header" onclick="toggleCampaign('${expandId}')">
+                <div class="campaign-title-block">
+                  <h3>${esc(campaign.campaign_name)}</h3>
+                  <div class="campaign-meta">
+                    <span class="meta-pill">Score ${esc(campaign.top_score)}</span>
+                    <span class="meta-pill">${esc(campaign.total_creatives)} creatives</span>
+                    <span class="meta-pill">${esc(campaign.platform)}</span>
+                  </div>
+                </div>
+                ${primaryImageUrl ? `<img src="${primaryImageUrl}" class="campaign-thumbnail" alt="Campaign preview">` : ""}
+                <span class="toggle-icon">▼</span>
               </div>
-              ${primaryImage ? `<img src="${primaryImage}" class="concept-img" alt="Creative image">` : ""}
-              <p><strong>Headline:</strong> ${esc(item.headline || "-")}</p>
-              <p><strong>CTA:</strong> ${esc(item.cta || "-")}</p>
-              <div class="download-row">
-                ${downloadButton(renderedUrl, fileNameFromPath(item.rendered_image_path, `${item.concept_id}.png`), "Rendered PNG")}
-                ${downloadButton(previewUrl, fileNameFromPath(item.preview_image_path, `${item.concept_id}-preview.png`), "Preview PNG")}
+              <div id="${expandId}" class="campaign-content">
+                <div class="campaign-tabs">
+                  <button class="tab-btn active" data-tab="hooks-${idx}">Hooks</button>
+                  <button class="tab-btn" data-tab="angles-${idx}">Angles</button>
+                  <button class="tab-btn" data-tab="visuals-${idx}">Visual Concepts</button>
+                  <button class="tab-btn" data-tab="creatives-${idx}">Creatives</button>
+                </div>
+                
+                <div id="hooks-${idx}" class="tab-content active">
+                  ${campaign.hooks.map(h => `
+                    <div class="item-box">
+                      <strong>${esc(h.type)}</strong><br/>
+                      <p>${esc(h.text)}</p>
+                      <small>${esc(h.rationale)}</small>
+                    </div>
+                  `).join('')}
+                </div>
+                
+                <div id="angles-${idx}" class="tab-content hidden">
+                  ${campaign.angles.map(a => `
+                    <div class="item-box">
+                      <strong>${esc(a.name)}</strong><br/>
+                      <p>${esc(a.description)}</p>
+                      <small>Emotion: ${esc(a.target_emotion)}</small>
+                    </div>
+                  `).join('')}
+                </div>
+                
+                <div id="visuals-${idx}" class="tab-content hidden">
+                  ${campaign.visual_concepts.map(v => `
+                    <div class="item-box">
+                      <strong>${esc(v.concept_id)}</strong><br/>
+                      <p>Scene: ${esc(v.scene_description)}</p>
+                      <small>Style: ${esc(v.style_reference)} | Mood: ${esc(v.mood)}</small>
+                    </div>
+                  `).join('')}
+                </div>
+                
+                <div id="creatives-${idx}" class="tab-content hidden">
+                  ${campaign.creatives.map(c => {
+                    const renderedUrl = toPublicAssetUrl(c.rendered_image_path);
+                    return `
+                      <div class="creative-item">
+                        <div class="creative-info">
+                          <strong>${esc(c.headline || "N/A")}</strong>
+                          <p class="primary-text">${esc(c.primary_text || "-")}</p>
+                          <p class="description">${esc(c.description || "-")}</p>
+                          <p class="cta"><strong>CTA:</strong> ${esc(c.cta || "-")}</p>
+                          <p class="score">Score: ${esc(c.score)}</p>
+                        </div>
+                        <div class="creative-downloads">
+                            ${renderedUrl ? `<button class="view-btn" onclick="openImageModal('${esc(renderedUrl)}', '${esc(c.headline || "Creative")}')">View</button>` : ''}
+                            ${downloadButton(renderedUrl, `${c.concept_id}.png`, "Download PNG")}
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
               </div>
-              <div class="mono">Platform: ${esc(item.platform)} | Concept: ${esc(item.concept_id)}</div>
             </div>
           `;
         }).join("");
+        
+        // Attach tab switch listeners
+        document.querySelectorAll(".tab-btn").forEach(btn => {
+          btn.addEventListener("click", function() {
+            const tabGroup = this.parentElement;
+            const tabContent = tabGroup.parentElement;
+            const tabName = this.dataset.tab;
+            
+            tabGroup.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+            this.classList.add("active");
+            
+            tabContent.querySelectorAll(".tab-content").forEach(tc => tc.classList.add("hidden"));
+            document.getElementById(tabName).classList.remove("hidden");
+          });
+        });
       } catch (e) {
         empty(historyOutput, `Error loading execution history: ${esc(e.message || "Unknown error")}`);
       }
@@ -604,7 +829,22 @@ function wireEvents() {
     heroGenerateButton.textContent = "Generating...";
 
     try {
-      const response = await fetch(`${API_BASE_URL}/generate-creatives`, {
+        // If user uploaded sample files, save them to knowledge base first
+        if (sampleInput && sampleInput.files && sampleInput.files.length) {
+          const files = Array.from(sampleInput.files).slice(0, MAX_SAMPLE_IMAGES);
+          for (const f of files) {
+            try {
+              const fd = new FormData();
+              fd.append("file", f, f.name);
+              fd.append("title", `${byId("f-brand").value || "sample"} - ${f.name}`);
+              await fetch(`${API_BASE_URL}/knowledge-base/images`, { method: "POST", body: fd });
+            } catch (e) {
+              console.warn("KB upload failed", e);
+            }
+          }
+        }
+
+        const response = await fetch(`${API_BASE_URL}/generate-creatives`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -719,6 +959,10 @@ function wireEvents() {
     btnSidebarChat.addEventListener("click", () => {
       chatPanel.classList.remove("hidden");
     });
+  }
+
+  if (btnKnowledgeBase) {
+    btnKnowledgeBase.addEventListener("click", openKbModal);
   }
 }
 

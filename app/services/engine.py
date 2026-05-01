@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 
 from app.core.config import Settings
 from app.models import (
@@ -238,24 +239,33 @@ class CreativeDirectorEngine:
                 campaign_dir=campaign_dir,
             )
             
+            updated_asset = asset.model_copy(update={"rendered_ad": rendered_ad})
+            
+            # Generate preview BEFORE normalizing paths
+            if self._preview_generator:
+                preview = self._preview_generator.generate(asset=updated_asset, campaign_dir=campaign_dir)
+                updated_asset = updated_asset.model_copy(update={"preview": preview})
+            
             # Normalize rendered path for frontend
             if rendered_ad.image_path:
                 rel_path = Path(rendered_ad.image_path).relative_to(self._storage._output_root)
                 rendered_ad.image_path = f"/output/{rel_path.as_posix()}"
+                updated_asset = updated_asset.model_copy(update={"rendered_ad": rendered_ad})
                 
-            updated_asset = asset.model_copy(update={"rendered_ad": rendered_ad})
-            if self._preview_generator:
-                preview = self._preview_generator.generate(asset=updated_asset, campaign_dir=campaign_dir)
-                # Normalize preview path for frontend
-                if preview.image_path:
-                    rel_preview = Path(preview.image_path).relative_to(self._storage._output_root)
-                    preview.image_path = f"/output/{rel_preview.as_posix()}"
+            # Normalize preview path for frontend
+            if updated_asset.preview and updated_asset.preview.image_path:
+                rel_preview = Path(updated_asset.preview.image_path).relative_to(self._storage._output_root)
+                preview = updated_asset.preview.model_copy(update={"image_path": f"/output/{rel_preview.as_posix()}"})
                 updated_asset = updated_asset.model_copy(update={"preview": preview})
             rendered_assets.append(updated_asset)
         return rendered_assets
 
-    def get_top_creatives(self, *, limit: int, platform: Platform | None):
+    def get_top_creatives(self, *, limit: int | None, platform: Platform | None):
         return self._storage.get_top_creatives(limit=limit, platform=platform)
+
+    def get_campaign_history(self, *, limit: int | None, platform: Platform | None):
+        return self._storage.get_campaign_history(limit=limit, platform=platform)
+
 
     def _build_creative_assets(
         self,
