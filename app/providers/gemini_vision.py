@@ -37,11 +37,44 @@ class GeminiVisionProvider:
 
         try:
             response = await self._client.post(url, json=payload)
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as he:
+                # Log response body for diagnostics but avoid leaking the API key
+                body = None
+                try:
+                    body = response.text
+                except Exception:
+                    body = "<unreadable response body>"
+                print(f"[WARN] Gemini Vision request failed: status={response.status_code} url={url.split('?')[0]} body={body}")
+                # If model not found (404) attempt to list available models to help debugging
+                if response.status_code == 404:
+                    try:
+                        list_url = "https://generativelanguage.googleapis.com/v1beta/models"
+                        list_res = await self._client.get(f"{list_url}?key={self._api_key}")
+                        list_body = list_res.text if list_res is not None else ""
+                        print(f"[WARN] Model list response (for debugging): status={list_res.status_code} body={list_body}")
+                    except Exception as le:
+                        print(f"[WARN] Failed to fetch model list: {le}")
+                return ""
+
             data = response.json()
-            description = data['candidates'][0]['content']['parts'][0]['text']
-            return description.strip()
+            # Robustly locate the description text in response
+            description = ""
+            try:
+                # typical GL responses include 'candidates' with content -> parts
+                description = data.get('candidates', [])[0].get('content', {}).get('parts', [])[0].get('text', '')
+            except Exception:
+                # Fallback: try other possible shapes
+                if isinstance(data, dict):
+                    # look for text anywhere
+                    import json
+                    s = json.dumps(data)
+                    description = s[:400]
+
+            return (description or "").strip()
         except Exception as e:
+            # Non-HTTP related exceptions
             print(f"[WARN] Gemini Vision analysis failed: {e}")
             return ""
 

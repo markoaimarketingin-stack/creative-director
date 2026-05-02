@@ -39,7 +39,7 @@ const historyOutput = byId("history-output");
 const btnKnowledgeBase = byId("btn-knowledge-base");
 const requiredFieldIds = ["f-brand", "f-desc", "f-audience", "f-benefits"];
 
-const MAX_SAMPLE_IMAGES = 4;
+const MAX_SAMPLE_IMAGES = 3;
 const MAX_SAMPLE_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
 const countTargets = {
@@ -55,20 +55,47 @@ const countTargets = {
 let chatContext = {};
 let chatSessionId = localStorage.getItem("chat_session_id");
 let selectedKnowledgeImages = [];
+let selectedSampleFiles = [];
+
+function defaultSampleHint() {
+  return `Optional. Up to ${MAX_SAMPLE_IMAGES} images, max 5MB each, used as visual references for Vertex AI.`;
+}
+
+function totalSelectedReferences() {
+  return selectedKnowledgeImages.length + selectedSampleFiles.length;
+}
+
+function refreshSampleHint(message, bad = false) {
+  if (message) {
+    setSampleHint(message, bad);
+    return;
+  }
+  const total = totalSelectedReferences();
+  if (!total) {
+    setSampleHint(defaultSampleHint());
+    return;
+  }
+  setSampleHint(`Using ${total} reference image(s).`);
+}
+
+function sampleFileKey(file) {
+  return `${file.name}::${file.size}::${file.lastModified}`;
+}
 
 function useKnowledgeImage(url) {
   if (!url) return;
+  console.log("useKnowledgeImage called", { url });
   if (selectedKnowledgeImages.includes(url)) {
     setSampleHint("Image already added to references.");
     return;
   }
-  if (selectedKnowledgeImages.length >= MAX_SAMPLE_IMAGES) {
+  if (totalSelectedReferences() >= MAX_SAMPLE_IMAGES) {
     setSampleHint(`Maximum ${MAX_SAMPLE_IMAGES} reference images allowed.`, true);
     return;
   }
   selectedKnowledgeImages.push(url);
   updateSamplesList();
-  setSampleHint(`Using ${selectedKnowledgeImages.length} reference image(s) from knowledge base.`);
+  refreshSampleHint();
   // Refresh KB grid if modal is open to update button states
   const kbGrid = document.getElementById("kb-grid");
   if (kbGrid && kbGrid.innerHTML) {
@@ -77,9 +104,24 @@ function useKnowledgeImage(url) {
 }
 
 function removeKnowledgeImage(url) {
+  console.log("removeKnowledgeImage called", { url });
   selectedKnowledgeImages = selectedKnowledgeImages.filter((u) => u !== url);
   updateSamplesList();
-  setSampleHint(selectedKnowledgeImages.length ? `Using ${selectedKnowledgeImages.length} reference image(s).` : "Optional. Up to 4 images, max 5MB each, used as visual references for Vertex AI.");
+  refreshSampleHint();
+  // Refresh KB grid if modal is open to update button states
+  const kbGrid = document.getElementById("kb-grid");
+  if (kbGrid && kbGrid.innerHTML) {
+    fetchKnowledgeBaseImages();
+  }
+}
+
+function removeUploadedSample(index) {
+  console.log("removeUploadedSample called", { index });
+  if (index < 0 || index >= selectedSampleFiles.length) return;
+  selectedSampleFiles.splice(index, 1);
+  updateSamplesList();
+  refreshSampleHint();
+
   // Refresh KB grid if modal is open to update button states
   const kbGrid = document.getElementById("kb-grid");
   if (kbGrid && kbGrid.innerHTML) {
@@ -90,16 +132,67 @@ function removeKnowledgeImage(url) {
 function updateSamplesList() {
   const container = byId("f-samples-list");
   if (!container) return;
-  if (!selectedKnowledgeImages.length) {
+  if (!selectedKnowledgeImages.length && !selectedSampleFiles.length) {
     container.innerHTML = "";
     return;
   }
-  container.innerHTML = selectedKnowledgeImages.map((url) => `
-    <div class="sample-thumb" style="display:inline-block;margin-right:8px;">
-      <img src="${esc(url)}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #e5e5e5;" />
-      <div style="text-align:center;font-size:0.8em;margin-top:4px;"><button class="link-btn" onclick="removeKnowledgeImage('${esc(url)}')">Remove</button></div>
-    </div>
-  `).join("");
+  container.innerHTML = "";
+
+  const createThumb = ({ src, label, onRemove }) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "sample-thumb";
+    wrapper.style.display = "inline-block";
+    wrapper.style.marginRight = "8px";
+    wrapper.style.marginBottom = "8px";
+    wrapper.style.textAlign = "center";
+
+    const img = document.createElement("img");
+    img.src = src;
+    img.style.width = "64px";
+    img.style.height = "64px";
+    img.style.objectFit = "cover";
+    img.style.borderRadius = "6px";
+    img.style.border = "1px solid #e5e5e5";
+    wrapper.appendChild(img);
+
+    const kind = document.createElement("div");
+    kind.style.fontSize = "0.75em";
+    kind.style.color = "#6d7788";
+    kind.style.marginTop = "4px";
+    kind.textContent = label;
+    wrapper.appendChild(kind);
+
+    const removeLine = document.createElement("div");
+    removeLine.style.marginTop = "2px";
+    removeLine.style.fontSize = "0.8em";
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "link-btn";
+    removeBtn.type = "button";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", onRemove);
+
+    removeLine.appendChild(removeBtn);
+    wrapper.appendChild(removeLine);
+    container.appendChild(wrapper);
+  };
+
+  selectedSampleFiles.forEach((file, index) => {
+    const objectUrl = URL.createObjectURL(file);
+    createThumb({
+      src: objectUrl,
+      label: "Uploaded",
+      onRemove: () => removeUploadedSample(index),
+    });
+  });
+
+  selectedKnowledgeImages.forEach((url) => {
+    createThumb({
+      src: url,
+      label: "Knowledge Base",
+      onRemove: () => removeKnowledgeImage(url),
+    });
+  });
 }
 
 function esc(v) {
@@ -351,9 +444,12 @@ function renderKbGrid(items) {
     const title = esc(it.title || it.filename || "Untitled");
     const escUrl = esc(url);
     const isSelected = selectedKnowledgeImages.includes(url);
+    const atLimit = totalSelectedReferences() >= MAX_SAMPLE_IMAGES;
     const useButtonHtml = isSelected
       ? `<button class="link-btn" disabled style="opacity:0.5;cursor:not-allowed;">Already in use</button>`
-      : `<button class="link-btn" onclick="useKnowledgeImage('${escUrl}')">Use in generation</button>`;
+      : atLimit
+        ? `<button class="link-btn" disabled style="opacity:0.5;cursor:not-allowed;">Limit reached</button>`
+        : `<button class="link-btn" onclick="useKnowledgeImage('${escUrl}')">Use in generation</button>`;
     return `
       <div class="card" style="text-align:center;padding:8px;">
         <div style="height:120px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
@@ -639,10 +735,10 @@ async function buildPayload() {
     payload.logo_image = await getBase64(logoInput.files[0]);
   }
 
-  const sampleFiles = sampleInput ? sampleInput.files : [];
-  if (sampleFiles.length > 0) {
+  if (selectedSampleFiles.length > 0) {
+    console.log("buildPayload processing sample files", selectedSampleFiles);
     setStatus("Processing upload images...");
-    const selected = Array.from(sampleFiles).slice(0, MAX_SAMPLE_IMAGES);
+    const selected = selectedSampleFiles.slice(0, MAX_SAMPLE_IMAGES);
     for (const file of selected) {
       if (!file.type.startsWith("image/") || file.size > MAX_SAMPLE_IMAGE_SIZE_BYTES) {
         continue;
@@ -662,10 +758,23 @@ async function buildPayload() {
     );
   }
 
-    // Include selected knowledge-base image URLs as references as well
-    if (selectedKnowledgeImages && selectedKnowledgeImages.length) {
-      for (const u of selectedKnowledgeImages) payload.sample_images.push(u);
+  // Include selected knowledge-base image URLs as references as well (within global limit).
+  if (selectedKnowledgeImages && selectedKnowledgeImages.length) {
+    const remainingSlots = Math.max(0, MAX_SAMPLE_IMAGES - payload.sample_images.length);
+    if (remainingSlots > 0) {
+      for (const u of selectedKnowledgeImages.slice(0, remainingSlots)) {
+        payload.sample_images.push(u);
+      }
     }
+  }
+
+  refreshSampleHint(
+    payload.sample_images.length
+      ? `Using ${payload.sample_images.length} reference image(s) for generation.`
+      : defaultSampleHint(),
+    false
+  );
+  console.log("buildPayload result sample_images", payload.sample_images);
 
   return payload;
 }
@@ -830,8 +939,8 @@ function wireEvents() {
 
     try {
         // If user uploaded sample files, save them to knowledge base first
-        if (sampleInput && sampleInput.files && sampleInput.files.length) {
-          const files = Array.from(sampleInput.files).slice(0, MAX_SAMPLE_IMAGES);
+        if (selectedSampleFiles.length) {
+          const files = selectedSampleFiles.slice(0, MAX_SAMPLE_IMAGES);
           for (const f of files) {
             try {
               const fd = new FormData();
@@ -873,22 +982,70 @@ function wireEvents() {
     sampleInput.addEventListener("change", () => {
       const files = Array.from(sampleInput.files || []);
       if (!files.length) {
-        setSampleHint("Optional. Up to 4 images, max 5MB each, used as visual references for Vertex AI.");
+        refreshSampleHint();
         return;
       }
-      if (files.length > MAX_SAMPLE_IMAGES) {
-        setSampleHint(`Selected ${files.length} files. Only first ${MAX_SAMPLE_IMAGES} will be used.`, true);
+
+      const existingKeys = new Set(selectedSampleFiles.map(sampleFileKey));
+      let addedCount = 0;
+      let tooLarge = false;
+      let badType = false;
+      let duplicates = 0;
+      let limitReached = false;
+
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) {
+          badType = true;
+          continue;
+        }
+        if (file.size > MAX_SAMPLE_IMAGE_SIZE_BYTES) {
+          tooLarge = true;
+          continue;
+        }
+
+        const key = sampleFileKey(file);
+        if (existingKeys.has(key)) {
+          duplicates += 1;
+          continue;
+        }
+
+        if (totalSelectedReferences() >= MAX_SAMPLE_IMAGES) {
+          limitReached = true;
+          break;
+        }
+
+        selectedSampleFiles.push(file);
+        existingKeys.add(key);
+        addedCount += 1;
+      }
+
+      sampleInput.value = "";
+      updateSamplesList();
+
+      const notes = [];
+      if (duplicates) notes.push(`${duplicates} duplicate skipped`);
+      if (tooLarge) notes.push("oversize skipped");
+      if (badType) notes.push("non-image skipped");
+      if (limitReached) notes.push(`limit is ${MAX_SAMPLE_IMAGES}`);
+
+      if (addedCount > 0) {
+        const noteText = notes.length ? ` (${notes.join(", ")})` : "";
+        refreshSampleHint(`Selected ${selectedSampleFiles.length} uploaded image(s). Total references: ${totalSelectedReferences()}/${MAX_SAMPLE_IMAGES}.${noteText}`);
         return;
       }
-      if (files.some((f) => f.size > MAX_SAMPLE_IMAGE_SIZE_BYTES)) {
-        setSampleHint("One or more images are larger than 5MB and will be ignored.", true);
+
+      if (limitReached) {
+        refreshSampleHint(`Maximum ${MAX_SAMPLE_IMAGES} reference images allowed. Remove one to add another.`, true);
         return;
       }
-      if (files.some((f) => !f.type.startsWith("image/"))) {
-        setSampleHint("Only image files are accepted.", true);
+
+      if (tooLarge || badType || duplicates) {
+        const detail = notes.length ? ` (${notes.join(", ")})` : "";
+        refreshSampleHint(`No new images were added.${detail}`, true);
         return;
       }
-      setSampleHint(`Selected ${files.length} sample image(s).`);
+
+      refreshSampleHint();
     });
   }
 

@@ -17,7 +17,6 @@ from app.models import (
     Platform,
     VisualConcept,
 )
-from app.providers.gemini_vision import GeminiVisionProvider
 from app.providers.groq_llm import GroqLLMProvider
 from app.providers.huggingface import HuggingFaceClient
 from app.providers.nanobanana import NanoBananaClient
@@ -218,46 +217,11 @@ class CreativeDirectorEngine:
         brand_assets,
         brand_name: str,
     ) -> list[CreativeAsset]:
+        # Skip composition; return generated images as-is without text overlays
         rendered_assets: list[CreativeAsset] = []
         for asset in creative_assets:
-            image_source = next(iter(asset.generated_creative.image_urls), None)
-            if not image_source or not self._composition_service:
-                rendered_assets.append(asset)
-                continue
-
-            rendered_ad = self._composition_service.compose_ad(
-                image_source=image_source,
-                primary_text=asset.primary_text or "",
-                headline=asset.headline or asset.hook_text,
-                description=asset.description or "",
-                cta=asset.cta or "Learn More",
-                brand_name=brand_name,
-                brand_assets=brand_assets,
-                concept_id=asset.concept_id,
-                platform=asset.platform,
-                aspect_ratio=asset.visual_concept.aspect_ratio,
-                campaign_dir=campaign_dir,
-            )
-            
-            updated_asset = asset.model_copy(update={"rendered_ad": rendered_ad})
-            
-            # Generate preview BEFORE normalizing paths
-            if self._preview_generator:
-                preview = self._preview_generator.generate(asset=updated_asset, campaign_dir=campaign_dir)
-                updated_asset = updated_asset.model_copy(update={"preview": preview})
-            
-            # Normalize rendered path for frontend
-            if rendered_ad.image_path:
-                rel_path = Path(rendered_ad.image_path).relative_to(self._storage._output_root)
-                rendered_ad.image_path = f"/output/{rel_path.as_posix()}"
-                updated_asset = updated_asset.model_copy(update={"rendered_ad": rendered_ad})
-                
-            # Normalize preview path for frontend
-            if updated_asset.preview and updated_asset.preview.image_path:
-                rel_preview = Path(updated_asset.preview.image_path).relative_to(self._storage._output_root)
-                preview = updated_asset.preview.model_copy(update={"image_path": f"/output/{rel_preview.as_posix()}"})
-                updated_asset = updated_asset.model_copy(update={"preview": preview})
-            rendered_assets.append(updated_asset)
+            # Just use the generated image directly without composition
+            rendered_assets.append(asset)
         return rendered_assets
 
     def get_top_creatives(self, *, limit: int | None, platform: Platform | None):
@@ -332,7 +296,8 @@ class ServiceContainer:
         database = CampaignDatabase(settings)
         vertex_client = VertexAIClient(settings)
         hf_client = HuggingFaceClient(settings)
-        gemini_vision = GeminiVisionProvider(settings)
+        from app.providers.image_analyzer import ImageAnalyzer
+        gemini_vision = ImageAnalyzer(settings)
         composition_service = AdCompositionService(settings.output_root)
         preview_generator = AdPreviewGenerator()
         exporter = MetaAdsCsvExporter()
