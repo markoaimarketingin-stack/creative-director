@@ -266,8 +266,31 @@ class CampaignStorage:
 
     # Knowledge base helpers
     def save_kb_image_from_bytes(self, filename: str, data: bytes, title: str | None = None, tags: list[str] | None = None) -> dict:
-        """Save a knowledge-base image and record metadata."""
-        from hashlib import md5
+        """Save a knowledge-base image and record metadata, with duplicate detection."""
+        from hashlib import sha256
+        
+        # Calculate content hash to detect duplicates
+        content_hash = sha256(data).hexdigest()
+        
+        # Check if image with same content already exists
+        meta_path = self._kb_root / "metadata.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            meta = []
+        
+        # Look for existing entry with same content hash
+        for existing_entry in meta:
+            if existing_entry.get("content_hash") == content_hash:
+                # Update title and tags if provided and different
+                if title and title != existing_entry.get("title"):
+                    existing_entry["title"] = title
+                if tags and tags != existing_entry.get("tags"):
+                    existing_entry["tags"] = tags
+                    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+                return existing_entry
+        
+        # New image - save it
         ts = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
         safe_name = f"{ts}-{filename}".replace(" ", "_")
         path = self._kb_root / safe_name
@@ -275,14 +298,9 @@ class CampaignStorage:
 
         web_path = f"/output/{path.relative_to(self._output_root).as_posix()}"
 
-        meta_path = self._kb_root / "metadata.json"
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except Exception:
-            meta = []
-
         entry = {
-            "id": md5(web_path.encode("utf-8")).hexdigest(),
+            "id": content_hash,
+            "content_hash": content_hash,
             "title": title or filename,
             "filename": safe_name,
             "web_path": web_path,

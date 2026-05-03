@@ -53,9 +53,9 @@ class CreativeInput(BaseModel):
     logo_image: str | None = None
 
     campaign_name: str | None = None
-    hook_count: int = Field(default=15, ge=10, le=20)
-    angle_count: int = Field(default=5, ge=3, le=7)
-    copy_count: int = Field(default=20, ge=5, le=30)
+    hook_count: int = Field(default=5, ge=1, le=10)
+    angle_count: int = Field(default=3, ge=1, le=10)
+    copy_count: int = Field(default=5, ge=1, le=10)
     concept_count: int = Field(default=5, ge=1, le=10)
 
     @field_validator("brand_name", "product_description", "target_audience", "tone", "visual_style")

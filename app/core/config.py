@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     hf_api_key: str | None = None
     hf_image_model: str = "black-forest-labs/FLUX.1-schnell"
     hf_image_model_small: str = "black-forest-labs/FLUX.1-schnell"
+    hf_image_reference_model: str = ""
+    hf_image_caption_model: str = "Salesforce/blip-image-captioning-large"
     image_provider_timeout_seconds: float = 90.0
 
     storage_backend: str = "local"

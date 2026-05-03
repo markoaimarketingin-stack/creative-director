@@ -49,7 +49,6 @@ class CreativeDirectorEngine:
         preview_generator: AdPreviewGenerator | None = None,
         exporter: MetaAdsCsvExporter | None = None,
         image_fallback_service: LocalImageFallbackService | None = None,
-        gemini_vision: GeminiVisionProvider | None = None,
     ) -> None:
         self._hook_generator = hook_generator
         self._angle_generator = angle_generator
@@ -58,7 +57,6 @@ class CreativeDirectorEngine:
         self._nanobanana_client = nanobanana_client
         self._vertex_client = vertex_client
         self._hf_client = hf_client
-        self._gemini_vision = gemini_vision
         self._scoring_service = scoring_service
         self._storage = storage
         self._database = database
@@ -77,53 +75,68 @@ class CreativeDirectorEngine:
         concept_task = asyncio.create_task(self._visual_concept_generator.generate(payload, hooks, angles))
         ad_copies, visual_concepts = await asyncio.gather(ad_copy_task, concept_task)
 
-        # 🚀 NEW: Analyze reference images using Gemini Vision if provided
-        if payload.sample_images and self._gemini_vision:
-            print(f"[INFO] Analyzing {len(payload.sample_images)} reference images...")
-            description = await self._gemini_vision.describe_images(payload.sample_images)
-            if description:
-                print(f"[INFO] Visual Reference: {description[:100]}...")
-                for concept in visual_concepts:
-                    concept.generation_prompt += f" Visual Reference style: {description}"
-
         generated_creatives = []
-        if self._vertex_client and getattr(self._vertex_client, "_project_id", None):
-            generated_creatives = await self._generate_images_with_timeout(
-                self._vertex_client.generate_batch(
-                    visual_concepts,
-                    platform=payload.platform,
-                    sample_images=payload.sample_images,
-                )
-            )
+        has_reference_images = bool(payload.sample_images)
 
-        if not generated_creatives or any(c.status in (CreativeStatus.FAILED, CreativeStatus.SKIPPED) for c in generated_creatives):
-            if self._nanobanana_client and self._has_real_api_key(getattr(self._nanobanana_client, "_api_key", None)):
-                fallback_creatives = await self._generate_images_with_timeout(
-                    self._nanobanana_client.generate_batch(
+        if has_reference_images:
+            if self._vertex_client and getattr(self._vertex_client, "_project_id", None):
+                print(f"[INFO] Generating {len(visual_concepts)} creatives with native reference-image support.")
+                generated_creatives = await self._generate_images_with_timeout(
+                    self._vertex_client.generate_batch(
                         visual_concepts,
                         platform=payload.platform,
                         sample_images=payload.sample_images,
                     )
                 )
-                if fallback_creatives:
-                    generated_creatives = fallback_creatives
-
-        if not generated_creatives or any(c.status in (CreativeStatus.FAILED, CreativeStatus.SKIPPED) for c in generated_creatives):
-            if getattr(self, "_hf_client", None) and getattr(self._hf_client, "_api_key", None):
-                fallback_creatives = await self._generate_images_with_timeout(
+            elif self._hf_client and getattr(self._hf_client, "_api_key", None):
+                print(f"[INFO] Generating {len(visual_concepts)} creatives with Hugging Face reference-image support.")
+                generated_creatives = await self._generate_images_with_timeout(
                     self._hf_client.generate_batch(
                         visual_concepts,
                         platform=payload.platform,
                         sample_images=payload.sample_images,
                     )
                 )
-                if fallback_creatives:
-                    generated_creatives = fallback_creatives
+
+        if (
+            not has_reference_images
+            and (not generated_creatives or any(c.status in (CreativeStatus.FAILED, CreativeStatus.SKIPPED) for c in generated_creatives))
+            and self._nanobanana_client
+            and self._has_real_api_key(getattr(self._nanobanana_client, "_api_key", None))
+        ):
+            fallback_creatives = await self._generate_images_with_timeout(
+                self._nanobanana_client.generate_batch(
+                    visual_concepts,
+                    platform=payload.platform,
+                    sample_images=payload.sample_images,
+                )
+            )
+            if fallback_creatives:
+                generated_creatives = fallback_creatives
+
+        if (
+            not has_reference_images
+            and (not generated_creatives or any(c.status in (CreativeStatus.FAILED, CreativeStatus.SKIPPED) for c in generated_creatives))
+            and getattr(self, "_hf_client", None)
+            and getattr(self._hf_client, "_api_key", None)
+        ):
+            fallback_creatives = await self._generate_images_with_timeout(
+                self._hf_client.generate_batch(
+                    visual_concepts,
+                    platform=payload.platform,
+                    sample_images=payload.sample_images,
+                )
+            )
+            if fallback_creatives:
+                generated_creatives = fallback_creatives
+
+        if has_reference_images and not generated_creatives:
+            print("[WARN] Sample images were provided, but no reference-image provider is configured. Reference images were not used.")
 
         if not generated_creatives:
             generated_creatives = []
 
-        if self._image_fallback_service:
+        if self._image_fallback_service and not has_reference_images:
             generated_creatives = self._image_fallback_service.generate_batch(
                 payload=payload,
                 concepts=visual_concepts,
@@ -217,12 +230,9 @@ class CreativeDirectorEngine:
         brand_assets,
         brand_name: str,
     ) -> list[CreativeAsset]:
-        # Skip composition; return generated images as-is without text overlays
-        rendered_assets: list[CreativeAsset] = []
-        for asset in creative_assets:
-            # Just use the generated image directly without composition
-            rendered_assets.append(asset)
-        return rendered_assets
+        """Skip composition - use generated images directly without text overlays."""
+        # Just return assets with generated images as-is, no text composition
+        return creative_assets
 
     def get_top_creatives(self, *, limit: int | None, platform: Platform | None):
         return self._storage.get_top_creatives(limit=limit, platform=platform)
@@ -251,6 +261,10 @@ class CreativeDirectorEngine:
         generated_lookup = {creative.concept_id: creative for creative in generated_creatives}
         score_lookup = {score.concept_id: score for score in scored_creatives}
 
+        print(f"[DEBUG] Building assets: {len(visual_concepts)} concepts, {len(generated_creatives)} generated, {len(scored_creatives)} scored")
+        print(f"[DEBUG] Generated lookup keys: {list(generated_lookup.keys())[:3]}")
+        print(f"[DEBUG] Score lookup keys: {list(score_lookup.keys())[:3]}")
+
         assets: list[CreativeAsset] = []
         for concept in visual_concepts:
             copy = copy_lookup.get((concept.hook_text, concept.angle_name)) or ad_copies[0]
@@ -258,8 +272,15 @@ class CreativeDirectorEngine:
             angle = angle_lookup.get(concept.angle_name)
             generated = generated_lookup.get(concept.concept_id)
             score = score_lookup.get(concept.concept_id)
+            
+            if generated is None:
+                print(f"[WARN] Missing generated creative for concept {concept.concept_id}")
+            if score is None:
+                print(f"[WARN] Missing score for concept {concept.concept_id}")
+            
             if generated is None or score is None:
                 continue
+            
             assets.append(
                 CreativeAsset(
                     campaign_name=campaign_name,
@@ -280,6 +301,7 @@ class CreativeDirectorEngine:
                     score=score,
                 )
             )
+        print(f"[DEBUG] Created {len(assets)} assets (filtered from {len(visual_concepts)} concepts)")
         assets.sort(key=lambda item: item.score.total_score, reverse=True)
         return assets
 
@@ -296,8 +318,6 @@ class ServiceContainer:
         database = CampaignDatabase(settings)
         vertex_client = VertexAIClient(settings)
         hf_client = HuggingFaceClient(settings)
-        from app.providers.image_analyzer import ImageAnalyzer
-        gemini_vision = ImageAnalyzer(settings)
         composition_service = AdCompositionService(settings.output_root)
         preview_generator = AdPreviewGenerator()
         exporter = MetaAdsCsvExporter()
@@ -318,10 +338,9 @@ class ServiceContainer:
             preview_generator=preview_generator,
             exporter=exporter,
             image_fallback_service=image_fallback_service,
-            gemini_vision=gemini_vision,
         )
         self.engine._image_provider_timeout_seconds = settings.image_provider_timeout_seconds
-        self._closables = [llm, nanobanana, vertex_client, hf_client, database, gemini_vision]
+        self._closables = [llm, nanobanana, vertex_client, hf_client, database]
 
     async def aclose(self) -> None:
         for resource in self._closables:

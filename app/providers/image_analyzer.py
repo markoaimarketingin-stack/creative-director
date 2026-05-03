@@ -10,14 +10,14 @@ class ImageAnalyzer:
 
     Preference order:
     1. If `groq_vision_endpoint` and `groq_api_key` are configured, POST there.
-    2. If Gemini API key configured, use Gemini (via existing GeminiVisionProvider elsewhere).
-    3. Otherwise use Hugging Face image-captioning model (configured by `hf_image_model`).
+    2. Use HuggingFace image captioning model (configured by `hf_image_caption_model`).
+    3. Otherwise return empty string.
     """
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._client = httpx.AsyncClient(timeout=60.0)
-        self._hf_model = settings.hf_image_model
+        self._hf_caption_model = settings.hf_image_caption_model  # For image analysis/captioning
         # Optional user-provided groq vision endpoint (not present by default)
         self._grok_vision_endpoint = getattr(settings, "groq_vision_endpoint", None)
         self._grok_api_key = settings.groq_api_key
@@ -51,9 +51,9 @@ class ImageAnalyzer:
                 print(f"[WARN] Groq vision call failed: {e}")
 
         # Fall back to Hugging Face image-captioning model
-        if self._settings.hf_api_key and self._hf_model:
+        if self._settings.hf_api_key and self._hf_caption_model:
             try:
-                url = f"https://api-inference.huggingface.co/models/{self._hf_model}"
+                url = f"https://api-inference.huggingface.co/models/{self._hf_caption_model}"
                 headers = {"Authorization": f"Bearer {self._settings.hf_api_key}"}
                 # send first image binary
                 img = sample_images[0]
@@ -66,9 +66,16 @@ class ImageAnalyzer:
 
                 res = await self._client.post(url, headers=headers, content=img_bytes)
                 if res.status_code == 200:
-                    # HF may return JSON with 'generated_text' or plain text
+                    # HF captioning models return JSON list with generated_text or dict
                     try:
                         body = res.json()
+                        if isinstance(body, list) and len(body) > 0:
+                            # Common format: [{"generated_text": "..."}, ...]
+                            first = body[0]
+                            if isinstance(first, dict):
+                                for k in ("generated_text", "caption", "text"):
+                                    if k in first and isinstance(first[k], str):
+                                        return first[k].strip()
                         if isinstance(body, dict):
                             # try common keys
                             for k in ("generated_text", "caption", "text"):

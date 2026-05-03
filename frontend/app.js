@@ -548,13 +548,17 @@ function renderAll(data) {
   setStatus(`Generated ${renderedCount} full ad${renderedCount === 1 ? "" : "s"} with previews and export assets.`);
 
   list(finalsOutput, assets, (asset) => {
-    const renderedUrl = toPublicAssetUrl(asset.rendered_ad?.image_path);
-    const previewUrl = toPublicAssetUrl(asset.preview?.image_path);
+    // Try to get image from generated_creative.image_urls first (direct data URL)
+    let displayUrl = null;
+    if (asset.generated_creative?.image_urls && asset.generated_creative.image_urls.length > 0) {
+      displayUrl = asset.generated_creative.image_urls[0];
+    }
+    
     return `
       <div class="card card-creative">
         <div class="creative-grid">
           <div>
-            ${renderedUrl ? `<img src="${renderedUrl}" class="concept-img" alt="Rendered ad">` : '<div class="card-inline-empty">Rendered output unavailable.</div>'}
+            ${displayUrl ? `<img src="${displayUrl}" class="concept-img" alt="Generated ad" loading="lazy">` : '<div class="card-inline-empty">Image unavailable.</div>'}
           </div>
           <div class="creative-meta">
             <div class="pill-row">
@@ -581,9 +585,8 @@ function renderAll(data) {
             ${asset.generated_creative?.error ? `<div class="mono"><strong>Provider Error:</strong> ${esc(asset.generated_creative.error)}</div>` : ""}
             <p><strong>Concept:</strong> ${esc(asset.visual_concept?.scene_description || "-")}</p>
             <div class="download-row">
-              ${renderedUrl ? `<button class="view-btn" onclick="openImageModal('${esc(renderedUrl)}','${esc(asset.headline || 'Rendered ad')}')">View</button>` : ''}
-              ${downloadButton(renderedUrl, fileNameFromPath(asset.rendered_ad?.image_path, `${asset.concept_id}.png`), "Download PNG")}
-              ${downloadButton(previewUrl, fileNameFromPath(asset.preview?.image_path, `${asset.concept_id}-preview.png`), "Download Preview")}
+              ${displayUrl ? `<button class="view-btn" onclick="openImageModal('${esc(displayUrl)}','${esc(asset.headline || 'Generated ad')}')">View</button>` : ''}
+              ${downloadButton(displayUrl, `${asset.concept_id}.png`, "Download PNG")}
             </div>
             ${renderScoreNote(asset)}
           </div>
@@ -712,6 +715,20 @@ async function loadProviderHealth() {
 }
 
 async function buildPayload() {
+  // Validate and clamp count values to backend constraints
+  const validateCount = (value, min, max, defaultVal) => {
+    let num = parseInt(value, 10);
+    if (isNaN(num)) num = defaultVal;
+    if (num < min) num = min;
+    if (num > max) num = max;
+    return num;
+  };
+
+  const hook_count = validateCount(byId("f-hooks").value, 1, 10, 5);
+  const angle_count = validateCount(byId("f-angles").value, 1, 10, 3);
+  const copy_count = validateCount(byId("f-copy").value, 1, 10, 5);
+  const concept_count = validateCount(byId("f-concepts").value, 1, 10, 5);
+
   const payload = {
     brand_name: byId("f-brand").value.trim(),
     product_description: byId("f-desc").value.trim(),
@@ -724,10 +741,10 @@ async function buildPayload() {
     visual_style: byId("f-visual").value.trim(),
     brand_colors: byId("f-brand-colors").value.split(",").map((s) => s.trim()).filter(Boolean),
     brand_fonts: byId("f-brand-fonts").value.split(",").map((s) => s.trim()).filter(Boolean),
-    hook_count: parseInt(byId("f-hooks").value, 10) || 10,
-    angle_count: parseInt(byId("f-angles").value, 10) || 3,
-    copy_count: parseInt(byId("f-copy").value, 10) || 5,
-    concept_count: parseInt(byId("f-concepts").value, 10) || 2,
+    hook_count,
+    angle_count,
+    copy_count,
+    concept_count,
     sample_images: []
   };
 
@@ -780,6 +797,33 @@ async function buildPayload() {
 }
 
 function wireEvents() {
+  // Validate count inputs against backend constraints
+  const countConstraints = {
+    "f-hooks": { min: 1, max: 10 },
+    "f-angles": { min: 1, max: 10 },
+    "f-copy": { min: 1, max: 10 },
+    "f-concepts": { min: 1, max: 10 }
+  };
+
+  Object.entries(countConstraints).forEach(([id, { min, max }]) => {
+    const input = byId(id);
+    if (input) {
+      const enforceConstraints = () => {
+        let val = parseInt(input.value, 10);
+        if (isNaN(val) || val < min) input.value = min;
+        else if (val > max) input.value = max;
+      };
+      
+      input.addEventListener("change", enforceConstraints);
+      input.addEventListener("blur", enforceConstraints);
+      input.addEventListener("input", () => {
+        // On input, just update the input's min/max in case someone bypassed them
+        input.min = min;
+        input.max = max;
+      });
+    }
+  });
+
   chatSend.addEventListener("click", sendChatMessage);
   chatInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
