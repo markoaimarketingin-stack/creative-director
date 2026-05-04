@@ -100,7 +100,7 @@ class AdCopyGenerator:
                     primary_text=smart_truncate(polished.primary_text, limits["primary_text"]),
                     headline=smart_truncate(polished.headline, limits["headline"]),
                     cta=smart_truncate(polished.cta, 24),
-                    description=smart_truncate(polished.description, limits["description"]),
+                    description=smart_truncate(polished.description, limits["description"], min_length=5),
                 )
             )
 
@@ -166,7 +166,15 @@ def _normalize_visual_concept(draft: VisualConceptDraft, *, platform: Platform) 
     )
 
 
-def smart_truncate(value: str, limit: int) -> str:
+def smart_truncate(value: str, limit: int, min_length: int = 5) -> str:
+    """
+    Truncate text to fit within limit, but maintain at least min_length characters.
+    
+    Args:
+        value: Text to truncate
+        limit: Maximum character limit
+        min_length: Minimum characters to preserve (default 5 for validation compatibility)
+    """
     compact = " ".join(value.split())
     if len(compact) <= limit:
         return compact
@@ -193,7 +201,15 @@ def smart_truncate(value: str, limit: int) -> str:
         break
 
     if not output:
-        return compact[:limit].rstrip()
+        # Ensure we have at least min_length characters
+        truncated = compact[:limit].rstrip()
+        if len(truncated) < min_length:
+            # If truncation would violate min_length, return first words instead
+            for word in words:
+                if len(word) <= min_length:
+                    return word
+            return truncated
+        return truncated
     return " ".join(output)
 
 
