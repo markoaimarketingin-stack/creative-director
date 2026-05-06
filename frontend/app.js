@@ -553,6 +553,9 @@ function renderAll(data) {
     if (asset.generated_creative?.image_urls && asset.generated_creative.image_urls.length > 0) {
       displayUrl = asset.generated_creative.image_urls[0];
     }
+    const assetsDownloadUrl = campaignDir ? toPublicAssetUrl(`${campaignDir}\\exports\\${asset.concept_id}-assets.zip`) : "";
+    const mockupDownloadUrl = campaignDir ? toPublicAssetUrl(`${campaignDir}\\exports\\${asset.concept_id}-mockup.pdf`) : "";
+    const visualConfidence = asset.score?.total_score ?? "-";
     
     return `
       <div class="card card-creative">
@@ -567,6 +570,20 @@ function renderAll(data) {
               <span class="metric-pill">${esc(asset.platform)}</span>
             </div>
             <h3>${esc(asset.headline || asset.hook_text)}</h3>
+            <div class="final-summary-grid">
+              <div class="summary-chip emphasis">
+                <span>Best Hook</span>
+                <strong>${esc(asset.hook_text || "-")}</strong>
+              </div>
+              <div class="summary-chip emphasis">
+                <span>Best Angle</span>
+                <strong>${esc(asset.angle_name || "-")}</strong>
+              </div>
+              <div class="summary-chip confidence">
+                <span>Visual Confidence</span>
+                <strong>${esc(visualConfidence)}%</strong>
+              </div>
+            </div>
             <div class="ad-copy-block">
               <div class="ad-copy-label">Primary Text</div>
               <p class="ad-copy-body">${esc(asset.primary_text || "Primary text unavailable.")}</p>
@@ -579,14 +596,16 @@ function renderAll(data) {
               <div><strong>Description:</strong> ${esc(asset.description || "-")}</div>
               <div><strong>CTA:</strong> ${esc(asset.cta || "-")}</div>
             </div>
-            <p><strong>Angle:</strong> ${esc(asset.angle_name)}</p>
-            <p><strong>Hook Type:</strong> ${esc(humanizeToken(asset.hook_type || "-"))}</p>
-            <p><strong>Image Provider:</strong> ${esc(asset.generated_creative?.provider || "-")} (${esc(asset.generated_creative?.status || "-")})</p>
+            <div class="summary-stack">
+              <div><strong>Visual Concept:</strong> ${esc(asset.visual_concept?.scene_description || "-")}</div>
+              <div><strong>Hook Type:</strong> ${esc(humanizeToken(asset.hook_type || "-"))}</div>
+              <div><strong>Image Provider:</strong> ${esc(asset.generated_creative?.provider || "-")} (${esc(asset.generated_creative?.status || "-")})</div>
+            </div>
             ${asset.generated_creative?.error ? `<div class="mono"><strong>Provider Error:</strong> ${esc(asset.generated_creative.error)}</div>` : ""}
-            <p><strong>Concept:</strong> ${esc(asset.visual_concept?.scene_description || "-")}</p>
             <div class="download-row">
               ${displayUrl ? `<button class="view-btn" onclick="openImageModal('${esc(displayUrl)}','${esc(asset.headline || 'Generated ad')}')">View</button>` : ''}
-              ${downloadButton(displayUrl, `${asset.concept_id}.png`, "Download PNG")}
+              ${downloadButton(assetsDownloadUrl, `${asset.concept_id}-assets.zip`, "Download Assets")}
+              ${downloadButton(mockupDownloadUrl, `${asset.concept_id}-mockup.pdf`, "Download Ad Mockups")}
             </div>
             ${renderScoreNote(asset)}
           </div>

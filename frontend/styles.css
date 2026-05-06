@@ -481,6 +481,55 @@ body {
   color: #344054;
 }
 
+.final-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.summary-chip {
+  border: 1px solid #e3e6eb;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+}
+
+.summary-chip span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #667085;
+}
+
+.summary-chip strong {
+  display: block;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: #101828;
+}
+
+.summary-chip.emphasis {
+  border-color: #cfd4dc;
+}
+
+.summary-chip.confidence {
+  border-color: #d6e8d7;
+  background: linear-gradient(180deg, #f6fbf7 0%, #eef8f0 100%);
+}
+
+.summary-stack {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e3e6eb;
+  border-radius: 12px;
+  background: #fcfcfd;
+  color: #344054;
+}
+
 .pill-row,
 .download-row {
   display: flex;

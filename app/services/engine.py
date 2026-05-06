@@ -23,6 +23,7 @@ from app.providers.nanobanana import NanoBananaClient
 from app.providers.vertex_ai import VertexAIClient
 from app.services.composition import AdCompositionService, build_brand_assets
 from app.services.database import CampaignDatabase
+from app.services.download_artifacts import CreativeDownloadArtifactExporter
 from app.services.exporter import MetaAdsCsvExporter
 from app.services.generators import AdCopyGenerator, HookGenerator, MessagingAngleGenerator, VisualConceptGenerator
 from app.services.image_fallback import LocalImageFallbackService
@@ -185,6 +186,10 @@ class CreativeDirectorEngine:
             brand_name=payload.brand_name,
         )
         export_rows = self._exporter.export(assets=creative_assets, campaign_dir=campaign_dir) if self._exporter else []
+        download_exporter = CreativeDownloadArtifactExporter()
+        for asset in creative_assets:
+            if asset.rendered_ad:
+                download_exporter.export(asset=asset, campaign_dir=campaign_dir)
 
         package = CampaignPackage(
             campaign_name=campaign_name,
