@@ -548,9 +548,8 @@ function renderAll(data) {
   setStatus(`Generated ${renderedCount} full ad${renderedCount === 1 ? "" : "s"} with previews and export assets.`);
 
   list(finalsOutput, assets, (asset) => {
-    // Try to get image from generated_creative.image_urls first (direct data URL)
-    let displayUrl = null;
-    if (asset.generated_creative?.image_urls && asset.generated_creative.image_urls.length > 0) {
+    let displayUrl = asset.rendered_ad?.image_path ? toPublicAssetUrl(asset.rendered_ad.image_path) : null;
+    if (!displayUrl && asset.generated_creative?.image_urls && asset.generated_creative.image_urls.length > 0) {
       displayUrl = asset.generated_creative.image_urls[0];
     }
     const assetsDownloadUrl = campaignDir ? toPublicAssetUrl(`${campaignDir}\\exports\\${asset.concept_id}-assets.zip`) : "";

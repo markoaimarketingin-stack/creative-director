@@ -27,6 +27,7 @@ from app.services.prompts import (
     ad_copy_prompt,
     angle_prompt,
     hook_prompt,
+    huggingface_prompt,
     nanobanana_prompt,
     visual_concept_prompt,
 )
@@ -116,11 +117,12 @@ class VisualConceptGenerator:
         payload: CreativeInput,
         hooks: list[Hook],
         angles: list[MessagingAngle],
+        ad_copies: list[AdCopy] | None = None,
     ) -> list[VisualConcept]:
         try:
             raw_result = await self._llm.json_completion(
                 instructions=CREATIVE_SYSTEM_PROMPT,
-                user_prompt=visual_concept_prompt(payload, hooks, angles),
+                user_prompt=visual_concept_prompt(payload, hooks, angles, ad_copies),
             )
             result = normalize_visual_concept_set(raw_result)
         except Exception as exc:
@@ -130,11 +132,12 @@ class VisualConceptGenerator:
         concepts: list[VisualConcept] = []
         for index, item in enumerate(result.visual_concepts[: payload.concept_count], start=1):
             draft = _normalize_visual_concept(item, platform=payload.platform)
+            selected_copy = _match_ad_copy(draft, ad_copies or [])
             concepts.append(
                 VisualConcept(
                     concept_id=f"concept-{index:02d}",
-                    hook_text=draft.hook_text,
-                    angle_name=draft.angle_name,
+                    hook_text=selected_copy.hook_text if selected_copy else draft.hook_text,
+                    angle_name=selected_copy.angle_name if selected_copy else draft.angle_name,
                     scene_description=draft.scene_description,
                     camera_angle=draft.camera_angle,
                     background_setting=draft.background_setting,
@@ -143,10 +146,23 @@ class VisualConceptGenerator:
                     style_reference=draft.style_reference,
                     aspect_ratio=draft.aspect_ratio,
                     media_type=draft.media_type,
-                    generation_prompt=nanobanana_prompt(payload, draft),
+                    generation_prompt=huggingface_prompt(payload, draft, selected_copy),
                 )
             )
         return concepts
+
+
+def _match_ad_copy(draft: VisualConceptDraft, ad_copies: list[AdCopy]) -> AdCopy | None:
+    for copy in ad_copies:
+        if copy.hook_text == draft.hook_text and copy.angle_name == draft.angle_name:
+            return copy
+    for copy in ad_copies:
+        if copy.angle_name == draft.angle_name:
+            return copy
+    for copy in ad_copies:
+        if copy.hook_text == draft.hook_text:
+            return copy
+    return ad_copies[0] if ad_copies else None
 
 
 def _normalize_visual_concept(draft: VisualConceptDraft, *, platform: Platform) -> VisualConceptDraft:

@@ -1,8 +1,11 @@
 import asyncio
 import inspect
+import io
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+
+from PIL import Image
 
 from app.core.config import Settings
 from app.models import (
@@ -15,6 +18,7 @@ from app.models import (
     MessagingAngle,
     Objective,
     Platform,
+    RenderedAd,
     VisualConcept,
 )
 from app.providers.groq_llm import GroqLLMProvider
@@ -72,9 +76,8 @@ class CreativeDirectorEngine:
         angles_task = asyncio.create_task(self._angle_generator.generate(payload))
         hooks, angles = await asyncio.gather(hooks_task, angles_task)
 
-        ad_copy_task = asyncio.create_task(self._ad_copy_generator.generate(payload, hooks, angles))
-        concept_task = asyncio.create_task(self._visual_concept_generator.generate(payload, hooks, angles))
-        ad_copies, visual_concepts = await asyncio.gather(ad_copy_task, concept_task)
+        ad_copies = await self._ad_copy_generator.generate(payload, hooks, angles)
+        visual_concepts = await self._visual_concept_generator.generate(payload, hooks, angles, ad_copies)
 
         generated_creatives = []
         has_reference_images = bool(payload.sample_images)
@@ -235,9 +238,46 @@ class CreativeDirectorEngine:
         brand_assets,
         brand_name: str,
     ) -> list[CreativeAsset]:
-        """Skip composition - use generated images directly without text overlays."""
-        # Just return assets with generated images as-is, no text composition
-        return creative_assets
+        if not self._composition_service:
+            return creative_assets
+
+        rendered_assets: list[CreativeAsset] = []
+        for asset in creative_assets:
+            image_source = next(iter(asset.generated_creative.image_urls), None)
+            if not image_source:
+                rendered_assets.append(asset)
+                continue
+
+            try:
+                image_bytes = self._composition_service._read_binary(image_source)
+                image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+                rendered_dir = Path(campaign_dir) / "rendered"
+                rendered_dir.mkdir(parents=True, exist_ok=True)
+                output_path = rendered_dir / f"{asset.concept_id}.png"
+                image.save(output_path, format="PNG", optimize=True)
+
+                rendered_ad = RenderedAd(
+                    concept_id=asset.concept_id,
+                    image_path=str(output_path),
+                    width=image.width,
+                    height=image.height,
+                    headline_lines=[asset.headline or asset.hook_text],
+                    body_lines=[asset.primary_text or ""],
+                    supporting_text=asset.description,
+                    cta_text=asset.cta or "Learn More",
+                    brand_name=brand_name,
+                )
+                preview = (
+                    self._preview_generator.generate(asset=asset.model_copy(update={"rendered_ad": rendered_ad}), campaign_dir=campaign_dir)
+                    if self._preview_generator
+                    else None
+                )
+                rendered_assets.append(asset.model_copy(update={"rendered_ad": rendered_ad, "preview": preview}))
+            except Exception as exc:
+                print(f"[WARN] Failed to save generated final ad for {asset.concept_id}: {type(exc).__name__}: {exc}")
+                rendered_assets.append(asset)
+
+        return rendered_assets
 
     def get_top_creatives(self, *, limit: int | None, platform: Platform | None):
         return self._storage.get_top_creatives(limit=limit, platform=platform)

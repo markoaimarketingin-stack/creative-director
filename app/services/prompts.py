@@ -3,7 +3,7 @@ from collections.abc import Iterable
 
 from pydantic import BaseModel
 
-from app.models import CreativeInput, Hook, MessagingAngle, Platform, VisualConcept, VisualConceptDraft
+from app.models import AdCopy, CreativeInput, Hook, MessagingAngle, Platform, VisualConcept, VisualConceptDraft
 
 PLATFORM_COPY_LIMITS: dict[Platform, dict[str, int]] = {
     Platform.META: {"primary_text": 125, "headline": 40, "description": 30},
@@ -112,8 +112,9 @@ def ad_copy_prompt(payload: CreativeInput, hooks: list[Hook], angles: list[Messa
         "- Strong, bold, and direct\n"
         "- No punctuation unless absolutely necessary\n\n"
         "3. DESCRIPTION:\n"
-        "- Max 5 words\n"
-        "- Add ONLY if it strengthens clarity or urgency, otherwise return an empty string\n\n"
+        "- Max 5 words, minimum 5 characters (or return empty string)\n"
+        "- Add ONLY if it strengthens clarity or urgency, otherwise return an empty string\n"
+        "- Must be complete phrase if provided (not abbreviations or single words)\n\n"
         "4. VARIATIONS & STYLE:\n"
         "- Rotate between these 3 styles: Emotional Hook, Curiosity Hook, Minimalist Premium\n"
         "- Avoid generic phrases like 'high quality', 'best product', 'crafted for you'\n"
@@ -123,8 +124,20 @@ def ad_copy_prompt(payload: CreativeInput, hooks: list[Hook], angles: list[Messa
     )
 
 
-def visual_concept_prompt(payload: CreativeInput, hooks: list[Hook], angles: list[MessagingAngle]) -> str:
+def visual_concept_prompt(
+    payload: CreativeInput,
+    hooks: list[Hook],
+    angles: list[MessagingAngle],
+    ad_copies: list[AdCopy] | None = None,
+) -> str:
     aspect_ratios = ", ".join(PLATFORM_ASPECT_RATIOS[payload.platform])
+    copy_context = ""
+    if ad_copies:
+        copy_context = (
+            "Candidate hook-angle-copy combinations. Select the strongest combinations for the visuals, "
+            "prioritizing clear buyer desire, product relevance, and CTA alignment:\n"
+            f"{serialize_selected(ad_copies[: min(len(ad_copies), payload.concept_count * 2)], ['hook_text', 'angle_name', 'primary_text', 'headline', 'cta', 'description'])}\n\n"
+        )
     return (
         "Task: Generate visual ad concepts that can be handed to an image generation model.\n\n"
         f"{brand_context(payload)}\n\n"
@@ -132,29 +145,81 @@ def visual_concept_prompt(payload: CreativeInput, hooks: list[Hook], angles: lis
         f"{serialize_selected(hooks[: min(len(hooks), payload.concept_count)], ['text'])}\n\n"
         "Reference angles:\n"
         f"{serialize_selected(angles, ['name', 'description'])}\n\n"
+        f"{copy_context}"
         f"Return JSON with a top-level `visual_concepts` array containing exactly {payload.concept_count} objects.\n"
         f"Prefer these aspect ratios for {payload.platform.value}: {aspect_ratios}.\n"
         "Each concept must contain: `hook_text`, `angle_name`, `scene_description`, `camera_angle`, "
         "`background_setting`, `color_palette`, `mood`, `style_reference`, `aspect_ratio`, `media_type`.\n"
         "Visual rules:\n"
+        "- Choose the best hook and angle pair from the supplied combinations. The chosen hook_text and angle_name must exactly match one supplied combination when possible.\n"
         "- The product must be visible, central, and physically believable in the scene.\n"
         "- Favor product-in-use, packaging, hands, environment, or demonstrable outcome over cinematic metaphor.\n"
         "- Include concrete shot direction, not vague art direction.\n"
+        "- Design the image as a finished ad layout with visual, headline area, short bodyline area, and CTA button already integrated.\n"
         "- Avoid surreal collage, floating objects, luxury editorial clichés, and generic neon backgrounds."
     )
 
 
-def nanobanana_prompt(payload: CreativeInput, concept: VisualConceptDraft | VisualConcept) -> str:
+def nanobanana_prompt(
+    payload: CreativeInput,
+    concept: VisualConceptDraft | VisualConcept,
+    ad_copy: AdCopy | None = None,
+) -> str:
     benefit_line = ", ".join(payload.key_benefits[:3])
+    copy_direction = ""
+    if ad_copy:
+        copy_direction = (
+            f"Selected hook: {ad_copy.hook_text}. Selected angle: {ad_copy.angle_name}. "
+            "The final image must already contain these exact readable text elements as part of the design: "
+            f"headline text \"{ad_copy.headline}\"; bodyline text \"{ad_copy.primary_text}\"; "
+            f"CTA button text \"{ad_copy.cta}\". "
+            "Use clean commercial typography, strong contrast, correct spelling, and a clear CTA button. "
+        )
     return (
         f"Create a {concept.aspect_ratio} {concept.media_type.value} performance ad creative for {payload.brand_name}. "
         f"Scene: {concept.scene_description}. Camera angle: {concept.camera_angle}. "
         f"Background: {concept.background_setting}. Mood: {concept.mood}. "
         f"Style: {concept.style_reference}. Palette: {', '.join(concept.color_palette)}. "
         f"Audience: {payload.target_audience}. Objective: {payload.objective.value}. "
+        f"{copy_direction}"
         f"Core benefit cues: {benefit_line}. Platform-native look for {payload.platform.value}. "
         "Keep the product large, readable, and grounded in realistic usage. "
-        "Commercially realistic, product-led, high-contrast, no watermarks, no floating UI, no abstract movie-poster composition."
+        "Commercially realistic, product-led, high-contrast, no watermarks, no floating UI, no abstract movie-poster composition. "
+        "Generate the complete finished ad image with the visual, headline, bodyline, and CTA button already present in the image."
+    )
+
+
+def huggingface_prompt(
+    payload: CreativeInput,
+    concept: VisualConceptDraft | VisualConcept,
+    ad_copy: AdCopy | None = None,
+) -> str:
+    """Generate prompt for Stable Diffusion v1.5 to render ads WITH TEXT INTEGRATED."""
+    benefit_line = ", ".join(payload.key_benefits[:3])
+    copy_direction = ""
+    if ad_copy:
+        copy_direction = (
+            f"TEXT IN IMAGE - Must render these exactly as written: "
+            f"TOP TEXT: {ad_copy.headline} | "
+            f"MIDDLE TEXT: {ad_copy.primary_text} | "
+            f"BOTTOM TEXT/CTA: {ad_copy.cta}. "
+            "White text with dark background or black text with light background. Bold, readable. "
+        )
+    return (
+        f"Professional ad for {payload.brand_name}. Size {concept.aspect_ratio}. "
+        f"{copy_direction}"
+        f"Scene: {concept.scene_description}. "
+        f"View: {concept.camera_angle}. "
+        f"Background: {concept.background_setting}. "
+        f"Lighting: {concept.mood}. "
+        f"Style: {concept.style_reference}. "
+        f"Colors: {', '.join(concept.color_palette)}. "
+        f"For: {payload.target_audience}. "
+        f"Goal: {payload.objective.value}. "
+        f"Message: {benefit_line}. "
+        f"Where: {payload.platform.value}. "
+        "Product big and clear, real usage shown, professional ad look. "
+        "Text must be in image, readable, correct spelling."
     )
 
 

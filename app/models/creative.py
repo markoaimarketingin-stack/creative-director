@@ -99,7 +99,7 @@ class AdCopy(BaseModel):
     primary_text: str = Field(..., min_length=10)
     headline: str = Field(..., min_length=3)
     cta: str = Field(..., min_length=2)
-    description: str = Field(..., min_length=5)
+    description: str = Field(default="", min_length=0)
     total_score: int | None = Field(default=None, ge=0, le=100)
     score_rank: int | None = Field(default=None, ge=1)
     score_rationale: str | None = None
