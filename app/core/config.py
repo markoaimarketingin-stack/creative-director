@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     vertex_ai_project_id: str | None = None
     vertex_ai_location: str = "us-central1"
     vertex_ai_image_model: str = "imagen-3.0-generate-001"
+    google_api_key: str | None = None
 
     hf_api_key: str | None = None
     hf_image_model: str = "black-forest-labs/FLUX.1-schnell"

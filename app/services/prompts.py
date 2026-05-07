@@ -150,13 +150,26 @@ def visual_concept_prompt(
         f"Prefer these aspect ratios for {payload.platform.value}: {aspect_ratios}.\n"
         "Each concept must contain: `hook_text`, `angle_name`, `scene_description`, `camera_angle`, "
         "`background_setting`, `color_palette`, `mood`, `style_reference`, `aspect_ratio`, `media_type`.\n"
-        "Visual rules:\n"
-        "- Choose the best hook and angle pair from the supplied combinations. The chosen hook_text and angle_name must exactly match one supplied combination when possible.\n"
-        "- The product must be visible, central, and physically believable in the scene.\n"
-        "- Favor product-in-use, packaging, hands, environment, or demonstrable outcome over cinematic metaphor.\n"
-        "- Include concrete shot direction, not vague art direction.\n"
-        "- Design the image as a finished ad layout with visual, headline area, short bodyline area, and CTA button already integrated.\n"
-        "- Avoid surreal collage, floating objects, luxury editorial clichés, and generic neon backgrounds."
+        "\nCRITICAL - ZERO META-COMPOSITION RULE:\n"
+        "DO NOT mention: laptops, monitors, screens, tablets, phones, people, hands, users, viewers, audience.\n"
+        "ONLY describe: the product/interface/outcome directly.\n\n"
+        "Product-Focused Examples (FOLLOW THESE PATTERNS):\n"
+        "✓ GOOD: 'Clean dashboard with blue metrics, orange buttons, real-time charts'\n"
+        "✓ GOOD: 'Modern app interface showing task lists, calendar, notifications'\n"
+        "✓ GOOD: 'Product packaging on neutral background with premium lighting'\n"
+        "✓ GOOD: 'Before/after split: chaotic workspace → organized workflow'\n"
+        "✓ GOOD: 'Abstract representation of interconnected data flows and efficiency'\n"
+        "✗ BAD: 'Person using a laptop showing the dashboard'\n"
+        "✗ BAD: 'Screen displaying product on a desk'\n"
+        "✗ BAD: 'Someone looking at the app'\n"
+        "✗ BAD: 'Hand holding a phone with app open'\n\n"
+        "Scene guidelines:\n"
+        "- For SaaS/software: describe the UI/interface directly with specific colors, elements, layout\n"
+        "- For physical products: describe the product with materials, finish, lighting, context\n"
+        "- For services: describe the outcome/benefit directly\n"
+        "- Use Apple product photography as reference: premium, minimal, hero-focused\n"
+        "- Include lighting direction, background style, color palette, and visual hierarchy\n"
+        "- The concept should fill the entire ad frame - no extra space or 'device showing ad' metaphors"
     )
 
 
@@ -194,32 +207,202 @@ def huggingface_prompt(
     concept: VisualConceptDraft | VisualConcept,
     ad_copy: AdCopy | None = None,
 ) -> str:
-    """Generate prompt for Stable Diffusion v1.5 to render ads WITH TEXT INTEGRATED."""
+    """
+    Optimized premium ad-generation prompt.
+    Designed for Imagen / FLUX / SDXL style models.
+    Focuses on:
+    - clean ad composition
+    - readable short typography
+    - premium commercial aesthetics
+    - avoiding nested screen hallucinations
+    """
+
     benefit_line = ", ".join(payload.key_benefits[:3])
-    copy_direction = ""
-    if ad_copy:
-        copy_direction = (
-            f"TEXT IN IMAGE - Must render these exactly as written: "
-            f"TOP TEXT: {ad_copy.headline} | "
-            f"MIDDLE TEXT: {ad_copy.primary_text} | "
-            f"BOTTOM TEXT/CTA: {ad_copy.cta}. "
-            "White text with dark background or black text with light background. Bold, readable. "
-        )
-    return (
-        f"Professional ad for {payload.brand_name}. Size {concept.aspect_ratio}. "
-        f"{copy_direction}"
-        f"Scene: {concept.scene_description}. "
-        f"View: {concept.camera_angle}. "
-        f"Background: {concept.background_setting}. "
-        f"Lighting: {concept.mood}. "
-        f"Style: {concept.style_reference}. "
-        f"Colors: {', '.join(concept.color_palette)}. "
-        f"For: {payload.target_audience}. "
-        f"Goal: {payload.objective.value}. "
-        f"Message: {benefit_line}. "
-        f"Where: {payload.platform.value}. "
-        "Product big and clear, real usage shown, professional ad look. "
-        "Text must be in image, readable, correct spelling."
+
+    headline = ad_copy.headline if ad_copy else "Work Faster"
+    primary_text = ad_copy.primary_text if ad_copy else "Built for modern teams"
+    cta = ad_copy.cta if ad_copy else "Start Free"
+
+    # Keep text SHORT for better typography rendering
+    headline = headline[:40]
+    primary_text = primary_text[:60]
+    cta = cta[:18]
+
+    return (f"""
+Create a premium commercial advertisement for {payload.brand_name}.
+
+IMPORTANT:
+This is a COMPLETE standalone advertisement design.
+Do NOT generate:
+- laptops
+- monitors
+- desks
+- people using devices
+- screenshots inside screens
+- nested advertisements
+- hands holding phones
+- office scenes
+- meta-compositions
+
+The advertisement itself fills the entire frame.
+
+════════════════════════════
+CORE VISUAL
+════════════════════════════
+
+Main concept:
+{concept.scene_description}
+
+Camera angle:
+{concept.camera_angle}
+
+Background:
+{concept.background_setting}
+
+Mood:
+{concept.mood}
+
+Style:
+{concept.style_reference}
+
+Color palette:
+{', '.join(concept.color_palette)}
+
+Platform:
+{payload.platform.value}
+
+Aspect ratio:
+{concept.aspect_ratio}
+
+════════════════════════════
+VISUAL STYLE
+════════════════════════════
+
+Generate a modern high-end advertising creative.
+
+Style references:
+- Apple advertising
+- Stripe landing pages
+- Airbnb campaigns
+- premium SaaS branding
+- Instagram sponsored creatives
+- venture-backed startup aesthetics
+
+The composition must feel:
+- premium
+- clean
+- modern
+- commercial
+- balanced
+- conversion-focused
+
+Use:
+- strong visual hierarchy
+- elegant spacing
+- realistic lighting
+- soft shadows
+- subtle gradients
+- premium UI styling
+- minimal clutter
+- high contrast
+- modern layout design
+
+════════════════════════════
+PRODUCT RULES
+════════════════════════════
+
+The product or interface must:
+- occupy most of the frame
+- be the clear hero element
+- be large and visually dominant
+- be professionally lit
+- look realistic and premium
+- remain crystal clear
+- avoid distortion
+
+For SaaS or apps:
+- show elegant dashboard/UI directly
+- UI fills the composition naturally
+- avoid showing the UI inside devices
+
+════════════════════════════
+TEXT RENDERING
+════════════════════════════
+
+Render ONLY these exact text elements:
+
+HEADLINE:
+"{headline}"
+
+BODY TEXT:
+"{primary_text}"
+
+CTA BUTTON:
+"{cta}"
+
+Typography requirements:
+- modern sans-serif typography
+- clean kerning
+- highly readable
+- short text only
+- correctly spelled
+- bold headline
+- premium commercial design
+- strong contrast
+- realistic button design
+
+Layout:
+- headline near top
+- body text near center
+- CTA button near bottom
+
+IMPORTANT:
+Keep text minimal and perfectly readable.
+Do NOT generate extra paragraphs.
+Do NOT generate fake UI text.
+Do NOT generate random letters.
+
+════════════════════════════
+NEGATIVE PROMPT
+════════════════════════════
+
+Avoid:
+- blurry text
+- unreadable typography
+- distorted letters
+- duplicated elements
+- fake paragraphs
+- random UI text
+- clutter
+- low quality
+- messy composition
+- floating objects
+- watermark
+- people
+- laptops
+- office desks
+- nested screens
+- screenshots
+- bad spacing
+- overcomplicated layouts
+
+════════════════════════════
+FINAL QUALITY TARGET
+════════════════════════════
+
+The final result should look like:
+- a real Instagram ad
+- premium Meta advertisement
+- App Store feature banner
+- startup launch campaign
+- commercial SaaS creative
+- professionally designed marketing visual
+
+Commercial-ready.
+Premium.
+Modern.
+High-converting.
+"""
     )
 
 

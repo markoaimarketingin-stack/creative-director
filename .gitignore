@@ -3,8 +3,16 @@ __pycache__/
 .venv/
 .env
 *.pyc
+*.log
+*.err.log
 output/
+test_output/
+scratch/
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+node_modules/
+dist/
+build/
+*.egg-info/

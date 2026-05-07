@@ -1,9 +1,9 @@
 import asyncio
 import base64
 import binascii
+import aiohttp
+import json
 from typing import Any
-from vertexai.preview.vision_models import ImageGenerationModel, Image as VertexImage
-import vertexai
 
 from app.core.config import Settings
 from app.models import CreativeStatus, GeneratedCreative, Platform, VisualConcept
@@ -16,12 +16,8 @@ class VertexAIClient:
         self._project_id = settings.vertex_ai_project_id
         self._location = settings.vertex_ai_location
         self._model_name = settings.vertex_ai_image_model
-        
-        if self._project_id:
-            vertexai.init(project=self._project_id, location=self._location)
-            self._model = ImageGenerationModel.from_pretrained(self._model_name)
-        else:
-            self._model = None
+        self._api_key = settings.google_api_key
+        self._base_url = "https://us-central1-aiplatform.googleapis.com/v1"
 
     async def generate_batch(
         self,
@@ -43,46 +39,17 @@ class VertexAIClient:
         platform: Platform,
         sample_images: list[str] | None = None
     ) -> GeneratedCreative:
-        if not self._project_id or not self._model:
+        if not self._project_id or not self._api_key:
             return GeneratedCreative(
                 concept_id=concept.concept_id,
                 provider="vertex-ai",
                 status=CreativeStatus.SKIPPED,
                 prompt=concept.generation_prompt,
-                error="VERTEX_AI_PROJECT_ID is not configured.",
+                error="VERTEX_AI_PROJECT_ID or GOOGLE_API_KEY is not configured.",
             )
 
-        last_error = "Vertex AI generation did not return a usable response."
         try:
-            # Prepare context images if sample images are provided
-            reference_images = []
-            if sample_images:
-                for img_data in sample_images[: self._MAX_REFERENCE_IMAGES]:
-                    image_bytes = self._decode_sample_image(img_data)
-                    if image_bytes:
-                        reference_images.append(VertexImage(image_bytes))
-
-            # Add context images to generation kwargs if supported by the model version.
-            # Using loop.run_in_executor since vertexai SDK is synchronous.
-            loop = asyncio.get_running_loop()
-            
-            kwargs = {
-                "prompt": concept.generation_prompt,
-                # "number_of_images": 1,
-                "aspect_ratio": self._get_vertex_aspect_ratio(concept.aspect_ratio),
-            }
-
-            response = await self._generate_with_optional_references(
-                loop=loop,
-                kwargs=kwargs,
-                reference_images=reference_images,
-            )
-
-            image_urls = []
-            for result in getattr(response, "images", []):
-                data_url = self._vertex_image_to_data_url(result)
-                if data_url:
-                    image_urls.append(data_url)
+            image_urls = await self._call_imagen_api(concept)
             
             if image_urls:
                 return GeneratedCreative(
@@ -95,98 +62,113 @@ class VertexAIClient:
                     video_urls=[],
                     raw_response={
                         "urls": image_urls,
-                        "reference_images_used": bool(reference_images),
-                        "reference_image_count": len(reference_images),
                     },
                 )
-            
-            last_error = "Vertex AI response did not include media."
-        except Exception as exc:
-            last_error = f"Vertex AI request failed: {exc}"
+            else:
+                return GeneratedCreative(
+                    concept_id=concept.concept_id,
+                    provider="vertex-ai",
+                    status=CreativeStatus.FAILED,
+                    prompt=concept.generation_prompt,
+                    error="No images returned from Vertex AI API",
+                )
+        
+        except Exception as e:
+            return GeneratedCreative(
+                concept_id=concept.concept_id,
+                provider="vertex-ai",
+                status=CreativeStatus.FAILED,
+                prompt=concept.generation_prompt,
+                error=str(e),
+            )
 
-        return GeneratedCreative(
-            concept_id=concept.concept_id,
-            provider="vertex-ai",
-            status=CreativeStatus.FAILED,
-            prompt=concept.generation_prompt,
-            error=last_error,
+    async def _call_imagen_api(self, concept: VisualConcept) -> list[str]:
+        """Call Vertex AI Imagen API via REST."""
+        # Use Vertex AI REST API endpoint (not generativelanguage)
+        url = (
+            f"https://us-central1-aiplatform.googleapis.com/v1/projects/{self._project_id}/"
+            f"locations/{self._location}/publishers/google/models/imagen-3.0-generate-001:predict"
         )
-
-    def _get_vertex_aspect_ratio(self, ratio_str: str) -> str:
-        # Map generic like "16:9" to Vertex AI specific format (e.g. "16:9")
-        return ratio_str
-
-    async def _generate_with_optional_references(
-        self,
-        *,
-        loop: asyncio.AbstractEventLoop,
-        kwargs: dict[str, Any],
-        reference_images: list[VertexImage],
-    ) -> Any:
-        if not reference_images:
-            return await loop.run_in_executor(
-                None,
-                lambda: self._model.generate_images(**kwargs),
-            )
-
-        reference_kwargs = {**kwargs, "reference_images": reference_images}
-        try:
-            return await loop.run_in_executor(
-                None,
-                lambda: self._model.generate_images(**reference_kwargs),
-            )
-        except TypeError:
-            # Older SDK/model combinations may not support reference_images.
-            return await loop.run_in_executor(
-                None,
-                lambda: self._model.generate_images(**kwargs),
-            )
-
-    def _decode_sample_image(self, image_data: str) -> bytes | None:
-        normalized = image_data.strip()
-        if normalized.startswith("data:"):
-            parts = normalized.split(",", 1)
-            if len(parts) != 2:
-                return None
-            normalized = parts[1]
-        if not normalized:
-            return None
-        try:
-            return base64.b64decode(normalized, validate=True)
-        except Exception:
-            return None
-
-    def _vertex_image_to_data_url(self, image_obj: Any) -> str | None:
-        image_bytes = self._extract_image_bytes(image_obj)
-        if not image_bytes:
-            return None
-        encoded = base64.b64encode(image_bytes).decode("ascii")
-        return f"data:image/png;base64,{encoded}"
-
-    def _extract_image_bytes(self, image_obj: Any) -> bytes | None:
-        direct_bytes = getattr(image_obj, "_image_bytes", None)
-        if isinstance(direct_bytes, bytes) and direct_bytes:
-            return direct_bytes
-
-        to_bytes = getattr(image_obj, "to_bytes", None)
-        if callable(to_bytes):
+        
+        # For direct API key access, we need to use it as a query parameter
+        headers = {
+            "Content-Type": "application/json",
+        }
+        
+        payload = {
+            "instances": [
+                {
+                    "prompt": concept.generation_prompt,
+                }
+            ],
+            "parameters": {
+                "sampleCount": 1,
+                "aspectRatio": self._get_vertex_aspect_ratio(concept.aspect_ratio),
+            }
+        }
+        
+        async with aiohttp.ClientSession() as session:
             try:
-                value = to_bytes()
-                if isinstance(value, bytes) and value:
-                    return value
-            except Exception:
-                pass
+                # Use API key as query parameter for Vertex AI API
+                async with session.post(
+                    f"{url}?key={self._api_key}",
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=60)
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return self._extract_image_urls(data)
+                    else:
+                        error_text = await resp.text()
+                        raise Exception(f"Vertex AI API returned {resp.status}: {error_text}")
+            
+            except aiohttp.ClientError as e:
+                raise Exception(f"Failed to call Vertex AI API: {e}")
 
-        as_base64 = getattr(image_obj, "_as_base64_string", None)
-        if callable(as_base64):
-            try:
-                value = as_base64()
-                if isinstance(value, str) and value.strip():
-                    return base64.b64decode(value, validate=True)
-            except (ValueError, binascii.Error):
-                pass
+    def _extract_image_urls(self, response: dict) -> list[str]:
+        """Extract image URLs from Vertex AI API response."""
+        urls = []
+        try:
+            # Vertex AI REST API returns predictions with base64 encoded images
+            predictions = response.get("predictions", [])
+            if not predictions:
+                print(f"Warning: No predictions in response: {response}")
+                return urls
+                
+            for prediction in predictions:
+                if isinstance(prediction, dict):
+                    # Try to get bytesBase64Encoded field
+                    bytes_base64 = prediction.get("bytesBase64Encoded") or prediction.get("bytesBase64Encoded")
+                    if not bytes_base64:
+                        # Try alternative keys
+                        for key in ["image", "imageBase64", "base64"]:
+                            if key in prediction:
+                                bytes_base64 = prediction[key]
+                                break
+                    
+                    if bytes_base64:
+                        data_url = f"data:image/png;base64,{bytes_base64}"
+                        urls.append(data_url)
+                elif isinstance(prediction, str):
+                    # If it's already a base64 string
+                    data_url = f"data:image/png;base64,{prediction}"
+                    urls.append(data_url)
+        except Exception as e:
+            print(f"Error extracting image URLs: {e}")
+        
+        return urls
 
-        return None
+    def _get_vertex_aspect_ratio(self, aspect_ratio: str) -> str:
+        """Map aspect ratio to Vertex AI format."""
+        ratio_map = {
+            "1:1": "1:1",
+            "4:5": "4:5",
+            "9:16": "9:16",
+            "16:9": "16:9",
+            "1.91:1": "1.91:1",
+        }
+        return ratio_map.get(aspect_ratio, "1:1")
 
     async def aclose(self) -> None:
         pass
