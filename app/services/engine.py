@@ -118,21 +118,22 @@ class CreativeDirectorEngine:
             if fallback_creatives:
                 generated_creatives = fallback_creatives
 
-        if (
-            not has_reference_images
-            and (not generated_creatives or any(c.status in (CreativeStatus.FAILED, CreativeStatus.SKIPPED) for c in generated_creatives))
-            and getattr(self, "_hf_client", None)
-            and getattr(self._hf_client, "_api_key", None)
-        ):
-            fallback_creatives = await self._generate_images_with_timeout(
-                self._hf_client.generate_batch(
-                    visual_concepts,
-                    platform=payload.platform,
-                    sample_images=payload.sample_images,
-                )
-            )
-            if fallback_creatives:
-                generated_creatives = fallback_creatives
+        # HuggingFace fallback disabled - using Vertex AI as primary
+        # if (
+        #     not has_reference_images
+        #     and (not generated_creatives or any(c.status in (CreativeStatus.FAILED, CreativeStatus.SKIPPED) for c in generated_creatives))
+        #     and getattr(self, "_hf_client", None)
+        #     and getattr(self._hf_client, "_api_key", None)
+        # ):
+        #     fallback_creatives = await self._generate_images_with_timeout(
+        #         self._hf_client.generate_batch(
+        #             visual_concepts,
+        #             platform=payload.platform,
+        #             sample_images=payload.sample_images,
+        #         )
+        #     )
+        #     if fallback_creatives:
+        #         generated_creatives = fallback_creatives
 
         if has_reference_images and not generated_creatives:
             print("[WARN] Sample images were provided, but no reference-image provider is configured. Reference images were not used.")
