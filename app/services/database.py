@@ -37,14 +37,29 @@ class ChatDatabase(BaseDatabase):
         with self._cursor() as cur:
             if cur is None:
                 return
+            # Drop and recreate tables to ensure correct schema
+            cur.execute("DROP TABLE IF EXISTS chat_messages CASCADE;")
+            cur.execute("DROP TABLE IF EXISTS chat_sessions CASCADE;")
+            
             cur.execute(
                 """
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id UUID PRIMARY KEY,
+                CREATE TABLE chat_sessions (
+                    id VARCHAR(255) PRIMARY KEY,
+                    title TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            
+            cur.execute(
+                """
+                CREATE TABLE chat_messages (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     session_id VARCHAR(255) NOT NULL,
                     role VARCHAR(50) NOT NULL,
                     content TEXT NOT NULL,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
                 );
                 """
             )
