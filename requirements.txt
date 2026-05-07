@@ -9,3 +9,4 @@ psycopg2-binary>=2.9.9
 google-cloud-aiplatform>=1.40.0
 google-auth>=2.40.0
 Pillow>=11.2.1
+aiohttp>=3.10.0
