@@ -1,7 +1,7 @@
 {
   "version": 2,
   "buildCommand": "echo \"Static frontend - no build needed\"",
-  "outputDirectory": "frontend",
+  "outputDirectory": ".",
   "cleanUrls": true,
   "trailingSlash": false,
   "routes": [
