@@ -47,6 +47,21 @@ app.include_router(providers_router)
 app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 app.mount("/output", StaticFiles(directory=str(settings.output_root)), name="output")
 
+
+@app.get("/styles.css", include_in_schema=False)
+async def frontend_styles() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "styles.css", media_type="text/css")
+
+
+@app.get("/app.js", include_in_schema=False)
+async def frontend_app() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "app.js", media_type="application/javascript")
+
+
+@app.get("/env-config.js", include_in_schema=False)
+async def frontend_config() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "env-config.js", media_type="application/javascript")
+
 @app.get("/")
 async def root() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "index.html")
