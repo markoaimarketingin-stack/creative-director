@@ -16,6 +16,3 @@ node_modules/
 dist/
 build/
 *.egg-info/
-DEPLOYMENT_GUIDE.md
-FRONTEND_FIX_SUMMARY.md
-QUICK_REFERENCE.md

@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "echo 'Static site - no build needed'",
-  "outputDirectory": "frontend",
+  "buildCommand": "mkdir -p public && cp -R frontend/. public/",
+  "outputDirectory": "public",
   "cleanUrls": true,
   "trailingSlash": false,
   "routes": [
