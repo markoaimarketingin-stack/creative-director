@@ -1,12 +1,20 @@
 import asyncio
 import base64
 import binascii
-import aiohttp
 import json
 from typing import Any
+import io
+import os
 
 from app.core.config import Settings
 from app.models import CreativeStatus, GeneratedCreative, Platform, VisualConcept
+
+try:
+    from google.cloud import aiplatform
+    from google.cloud.aiplatform.generative_models import GenerativeModel, Part
+    VERTEX_AI_AVAILABLE = True
+except ImportError:
+    VERTEX_AI_AVAILABLE = False
 
 
 class VertexAIClient:
@@ -16,8 +24,13 @@ class VertexAIClient:
         self._project_id = settings.vertex_ai_project_id
         self._location = settings.vertex_ai_location
         self._model_name = settings.vertex_ai_image_model
-        self._api_key = settings.google_api_key
-        self._base_url = "https://us-central1-aiplatform.googleapis.com/v1"
+        
+        # Initialize Vertex AI with project credentials
+        if self._project_id and VERTEX_AI_AVAILABLE:
+            aiplatform.init(project=self._project_id, location=self._location)
+            self._client = GenerativeModel("imagen-3.0-generate-001")
+        else:
+            self._client = None
 
     async def generate_batch(
         self,
@@ -39,13 +52,13 @@ class VertexAIClient:
         platform: Platform,
         sample_images: list[str] | None = None
     ) -> GeneratedCreative:
-        if not self._project_id or not self._api_key:
+        if not self._project_id or not self._client:
             return GeneratedCreative(
                 concept_id=concept.concept_id,
                 provider="vertex-ai",
                 status=CreativeStatus.SKIPPED,
                 prompt=concept.generation_prompt,
-                error="VERTEX_AI_PROJECT_ID or GOOGLE_API_KEY is not configured.",
+                error="VERTEX_AI_PROJECT_ID not set or Google Cloud credentials not available. Set GOOGLE_APPLICATION_CREDENTIALS env var.",
             )
 
         try:
@@ -83,81 +96,67 @@ class VertexAIClient:
             )
 
     async def _call_imagen_api(self, concept: VisualConcept) -> list[str]:
-        """Call Vertex AI Imagen API via REST."""
-        # Use Vertex AI REST API endpoint (not generativelanguage)
-        url = (
-            f"https://us-central1-aiplatform.googleapis.com/v1/projects/{self._project_id}/"
-            f"locations/{self._location}/publishers/google/models/imagen-3.0-generate-001:predict"
-        )
-        
-        # For direct API key access, we need to use it as a query parameter
-        headers = {
-            "Content-Type": "application/json",
-        }
-        
-        payload = {
-            "instances": [
-                {
-                    "prompt": concept.generation_prompt,
-                }
-            ],
-            "parameters": {
-                "sampleCount": 1,
-                "aspectRatio": self._get_vertex_aspect_ratio(concept.aspect_ratio),
-            }
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            try:
-                # Use API key as query parameter for Vertex AI API
-                async with session.post(
-                    f"{url}?key={self._api_key}",
-                    json=payload,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=60)
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return self._extract_image_urls(data)
-                    else:
-                        error_text = await resp.text()
-                        raise Exception(f"Vertex AI API returned {resp.status}: {error_text}")
-            
-            except aiohttp.ClientError as e:
-                raise Exception(f"Failed to call Vertex AI API: {e}")
-
-    def _extract_image_urls(self, response: dict) -> list[str]:
-        """Extract image URLs from Vertex AI API response."""
-        urls = []
+        """Call Vertex AI Imagen API using the official SDK."""
         try:
-            # Vertex AI REST API returns predictions with base64 encoded images
-            predictions = response.get("predictions", [])
-            if not predictions:
-                print(f"Warning: No predictions in response: {response}")
+            # Run SDK call in executor to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                self._generate_images_sync,
+                concept
+            )
+            
+            if response and hasattr(response, 'images') and response.images:
+                urls = []
+                for image in response.images:
+                    # Save image to local file and return file URL
+                    image_path = self._save_image_locally(image.data)
+                    if image_path:
+                        urls.append(f"/output/{image_path}")
                 return urls
-                
-            for prediction in predictions:
-                if isinstance(prediction, dict):
-                    # Try to get bytesBase64Encoded field
-                    bytes_base64 = prediction.get("bytesBase64Encoded") or prediction.get("bytesBase64Encoded")
-                    if not bytes_base64:
-                        # Try alternative keys
-                        for key in ["image", "imageBase64", "base64"]:
-                            if key in prediction:
-                                bytes_base64 = prediction[key]
-                                break
-                    
-                    if bytes_base64:
-                        data_url = f"data:image/png;base64,{bytes_base64}"
-                        urls.append(data_url)
-                elif isinstance(prediction, str):
-                    # If it's already a base64 string
-                    data_url = f"data:image/png;base64,{prediction}"
-                    urls.append(data_url)
-        except Exception as e:
-            print(f"Error extracting image URLs: {e}")
+            else:
+                return []
         
-        return urls
+        except Exception as e:
+            print(f"Vertex AI API error: {e}")
+            raise Exception(f"Failed to call Vertex AI API: {e}")
+
+    def _generate_images_sync(self, concept: VisualConcept):
+        """Synchronous image generation using Vertex AI SDK."""
+        try:
+            response = self._client.generate_images(
+                prompt=concept.generation_prompt,
+                number_of_images=1,
+                aspect_ratio=self._get_vertex_aspect_ratio(concept.aspect_ratio),
+            )
+            return response
+        except Exception as e:
+            print(f"Vertex AI generation failed: {e}")
+            raise
+
+    def _save_image_locally(self, image_data: bytes) -> str | None:
+        """Save image to local output directory and return relative path."""
+        try:
+            from datetime import datetime
+            import hashlib
+            
+            # Create output directory
+            output_dir = "output/vertex_ai_images"
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Create filename from timestamp and hash
+            timestamp = datetime.now().isoformat().replace(':', '-')
+            content_hash = hashlib.md5(image_data).hexdigest()[:8]
+            filename = f"imagen_{timestamp}_{content_hash}.png"
+            
+            filepath = os.path.join(output_dir, filename)
+            with open(filepath, 'wb') as f:
+                f.write(image_data)
+            
+            return f"vertex_ai_images/{filename}"
+        except Exception as e:
+            print(f"Failed to save image locally: {e}")
+            return None
 
     def _get_vertex_aspect_ratio(self, aspect_ratio: str) -> str:
         """Map aspect ratio to Vertex AI format."""
