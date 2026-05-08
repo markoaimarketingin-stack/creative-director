@@ -152,11 +152,6 @@ class VertexAIClient:
         except Exception as e:
             print(f"Vertex AI generation failed: {e}")
             raise
-            )
-            return response
-        except Exception as e:
-            print(f"Vertex AI generation failed: {e}")
-            raise
 
     def _save_image_locally(self, image_data: bytes) -> str | None:
         """Save image to local output directory and return relative path."""
