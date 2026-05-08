@@ -166,8 +166,11 @@ def _match_ad_copy(draft: VisualConceptDraft, ad_copies: list[AdCopy]) -> AdCopy
 
 
 def _normalize_visual_concept(draft: VisualConceptDraft, *, platform: Platform) -> VisualConceptDraft:
-    allowed_aspects = PLATFORM_ASPECT_RATIOS[platform]
-    aspect_ratio = draft.aspect_ratio if draft.aspect_ratio in allowed_aspects else allowed_aspects[0]
+    if platform in {Platform.META, Platform.TIKTOK}:
+        aspect_ratio = "9:16"
+    else:
+        allowed_aspects = PLATFORM_ASPECT_RATIOS[platform]
+        aspect_ratio = draft.aspect_ratio if draft.aspect_ratio in allowed_aspects else allowed_aspects[0]
     return VisualConceptDraft(
         hook_text=draft.hook_text,
         angle_name=draft.angle_name,
@@ -348,7 +351,7 @@ def _fallback_visual_concepts(
     hooks: list[Hook],
     angles: list[MessagingAngle],
 ) -> list[VisualConceptDraft]:
-    aspect_ratio = "9:16" if payload.platform == Platform.TIKTOK else "1:1"
+    aspect_ratio = "9:16" if payload.platform in {Platform.TIKTOK, Platform.META} else "1:1"
     concepts: list[VisualConceptDraft] = []
     for index in range(payload.concept_count):
         hook = hooks[index % len(hooks)]

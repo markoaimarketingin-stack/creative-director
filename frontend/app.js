@@ -598,9 +598,9 @@ function renderAll(data) {
             <div class="summary-stack">
               <div><strong>Visual Concept:</strong> ${esc(asset.visual_concept?.scene_description || "-")}</div>
               <div><strong>Hook Type:</strong> ${esc(humanizeToken(asset.hook_type || "-"))}</div>
-              <div><strong>Image Provider:</strong> ${esc(asset.generated_creative?.provider || "-")} (${esc(asset.generated_creative?.status || "-")})</div>
+              <div><strong>Image Provider:</strong> ${esc(asset.generated_creative?.provider || "-")}</div>
             </div>
-            ${asset.generated_creative?.error ? `<div class="mono"><strong>Provider Error:</strong> ${esc(asset.generated_creative.error)}</div>` : ""}
+            
             <div class="download-row">
               ${displayUrl ? `<button class="view-btn" onclick="openImageModal('${esc(displayUrl)}','${esc(asset.headline || 'Generated ad')}')">View</button>` : ''}
               ${downloadButton(assetsDownloadUrl, `${asset.concept_id}-assets.zip`, "Download Assets")}
@@ -1134,14 +1134,7 @@ function wireEvents() {
       const data = await response.json();
       if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
       renderAll(data);
-      const providerHealth = await loadProviderHealth();
-      if (providerHealth) {
-        const gr = providerHealth.groq;
-        const g = providerHealth.gemini;
-        const h = providerHealth.huggingface;
-        const summary = `Providers: Groq ${gr?.ok ? "OK" : "Fail"} | Gemini ${g?.ok ? "OK" : "Fail"} | HF ${h?.ok ? "OK" : "Fail"}`;
-        setStatus(summary, !(gr?.ok && h?.ok));
-      }
+      // Keep status focused on user outcome instead of provider diagnostics.
     } catch (error) {
       setStatus(error.message || "Generation failed.", true);
       showDashboard();

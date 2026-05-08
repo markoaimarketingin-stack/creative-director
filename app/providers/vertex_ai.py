@@ -157,12 +157,13 @@ class VertexAIClient:
     def _get_vertex_aspect_ratio(self, aspect_ratio: str) -> str:
         ratio_map = {
             "1:1": "1:1",
-            "4:5": "4:5",
+            # Vertex Imagen in current SDK path may reject 4:5; use vertical-safe fallback.
+            "4:5": "9:16",
             "9:16": "9:16",
             "16:9": "16:9",
             "1.91:1": "1.91:1",
         }
-        return ratio_map.get(aspect_ratio, "1:1")
+        return ratio_map.get(aspect_ratio, "9:16")
 
     async def aclose(self) -> None:
         return None

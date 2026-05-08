@@ -163,6 +163,12 @@ class AdCompositionService:
             encoded = source.split(",", 1)[1]
             return base64.b64decode(encoded)
 
+        if source.startswith("/output/"):
+            relative = source[len("/output/"):].lstrip("/")
+            candidate = self._output_root / relative
+            if candidate.exists():
+                return candidate.read_bytes()
+
         path = Path(source)
         if path.exists():
             return path.read_bytes()
