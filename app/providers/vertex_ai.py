@@ -24,13 +24,20 @@ class VertexAIClient:
         self._project_id = settings.vertex_ai_project_id
         self._location = settings.vertex_ai_location
         self._model_name = settings.vertex_ai_image_model
+        self._client = None
         
         # Initialize Vertex AI with project credentials
         if self._project_id and VERTEX_AI_AVAILABLE:
-            aiplatform.init(project=self._project_id, location=self._location)
-            self._client = GenerativeModel("imagen-3.0-generate-001")
+            try:
+                print(f"[VERTEX_AI] Initializing with project: {self._project_id}, location: {self._location}")
+                aiplatform.init(project=self._project_id, location=self._location)
+                self._client = GenerativeModel("imagen-3.0-generate-001")
+                print(f"[VERTEX_AI] ✅ Successfully initialized Vertex AI client")
+            except Exception as e:
+                print(f"[VERTEX_AI] ❌ Failed to initialize: {type(e).__name__}: {e}")
+                self._client = None
         else:
-            self._client = None
+            print(f"[VERTEX_AI] Skipped - VERTEX_AI_AVAILABLE={VERTEX_AI_AVAILABLE}, project_id={self._project_id}")
 
     async def generate_batch(
         self,
