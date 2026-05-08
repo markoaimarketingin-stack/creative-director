@@ -201,3 +201,82 @@ async def get_chat_sessions():
     chat_db = ChatDatabase(settings)
     sessions = chat_db.get_sessions()
     return {"sessions": sessions}
+
+@router.get("/session-data/{session_id}")
+async def get_session_data(session_id: str):
+    """Get all session data: chat history, knowledge base, and execution history."""
+    settings = get_settings()
+    from app.services.database import ChatDatabase
+    chat_db = ChatDatabase(settings)
+    
+    chat_history = chat_db.get_history(session_id)
+    knowledge_base = chat_db.get_knowledge_base(session_id)
+    execution_history = chat_db.get_execution_history(session_id)
+    
+    return {
+        "session_id": session_id,
+        "chat_history": chat_history,
+        "knowledge_base": knowledge_base,
+        "execution_history": execution_history,
+    }
+
+@router.post("/knowledge-base/{session_id}")
+async def save_knowledge_base(session_id: str, kb_item: dict):
+    """Save a knowledge base item to the session."""
+    settings = get_settings()
+    from app.services.database import ChatDatabase
+    chat_db = ChatDatabase(settings)
+    
+    kb_id = chat_db.save_knowledge_base_item(
+        session_id=session_id,
+        file_name=kb_item.get("file_name", "unknown"),
+        file_type=kb_item.get("file_type", "text"),
+        file_path=kb_item.get("file_path", ""),
+        file_content=kb_item.get("file_content"),
+        metadata=kb_item.get("metadata", {}),
+    )
+    
+    return {"success": kb_id is not None, "kb_id": kb_id, "session_id": session_id}
+
+@router.get("/knowledge-base/{session_id}")
+async def get_knowledge_base(session_id: str):
+    """Retrieve all knowledge base items for a session."""
+    settings = get_settings()
+    from app.services.database import ChatDatabase
+    chat_db = ChatDatabase(settings)
+    
+    knowledge_base = chat_db.get_knowledge_base(session_id)
+    return {"session_id": session_id, "knowledge_base": knowledge_base}
+
+@router.post("/execution-history/{session_id}")
+async def save_execution_history(session_id: str, execution: dict):
+    """Save execution/generation history."""
+    settings = get_settings()
+    from app.services.database import ChatDatabase
+    import time
+    
+    chat_db = ChatDatabase(settings)
+    start_time = time.time()
+    
+    execution_id = chat_db.save_execution_history(
+        session_id=session_id,
+        campaign_name=execution.get("campaign_name", "unknown"),
+        execution_type=execution.get("execution_type", "generation"),
+        input_data=execution.get("input_data", {}),
+        output_data=execution.get("output_data", {}),
+        status=execution.get("status", "success"),
+        error_message=execution.get("error_message"),
+        execution_time_ms=int((time.time() - start_time) * 1000),
+    )
+    
+    return {"success": execution_id is not None, "execution_id": execution_id, "session_id": session_id}
+
+@router.get("/execution-history/{session_id}")
+async def get_execution_history(session_id: str):
+    """Retrieve execution history for a session."""
+    settings = get_settings()
+    from app.services.database import ChatDatabase
+    chat_db = ChatDatabase(settings)
+    
+    execution_history = chat_db.get_execution_history(session_id)
+    return {"session_id": session_id, "execution_history": execution_history}

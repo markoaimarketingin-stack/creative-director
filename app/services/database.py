@@ -38,6 +38,8 @@ class ChatDatabase(BaseDatabase):
             if cur is None:
                 return
             # Drop and recreate tables to ensure correct schema
+            cur.execute("DROP TABLE IF EXISTS execution_history CASCADE;")
+            cur.execute("DROP TABLE IF EXISTS knowledge_base CASCADE;")
             cur.execute("DROP TABLE IF EXISTS chat_messages CASCADE;")
             cur.execute("DROP TABLE IF EXISTS chat_sessions CASCADE;")
             
@@ -63,9 +65,56 @@ class ChatDatabase(BaseDatabase):
                 );
                 """
             )
+            
+            cur.execute(
+                """
+                CREATE TABLE knowledge_base (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    session_id VARCHAR(255),
+                    file_name TEXT NOT NULL,
+                    file_type VARCHAR(50),
+                    file_path TEXT,
+                    file_content TEXT,
+                    metadata JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
+                );
+                """
+            )
+            
+            cur.execute(
+                """
+                CREATE TABLE execution_history (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    session_id VARCHAR(255),
+                    campaign_name TEXT,
+                    execution_type VARCHAR(100),
+                    input_data JSONB,
+                    output_data JSONB,
+                    status VARCHAR(50),
+                    error_message TEXT,
+                    execution_time_ms INTEGER,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
+                );
+                """
+            )
+            
             cur.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
+                """
+            )
+            
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_knowledge_base_session_id ON knowledge_base(session_id);
+                """
+            )
+            
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_execution_history_session_id ON execution_history(session_id);
                 """
             )
 
@@ -114,6 +163,116 @@ class ChatDatabase(BaseDatabase):
                 """
             )
             return [{"session_id": row[0], "last_activity": row[1].isoformat(), "title": row[2]} for row in cur.fetchall()]
+
+    def save_knowledge_base_item(self, session_id: str, file_name: str, file_type: str, file_path: str, 
+                                 file_content: str | None = None, metadata: dict | None = None) -> str | None:
+        """Save a knowledge base item to Supabase."""
+        with self._cursor() as cur:
+            if cur is None:
+                return None
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO knowledge_base (session_id, file_name, file_type, file_path, file_content, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                    """,
+                    (session_id, file_name, file_type, file_path, file_content, json.dumps(metadata or {})),
+                )
+                result = cur.fetchone()
+                return str(result[0]) if result else None
+            except Exception as exc:
+                logger.exception("Error saving knowledge base item: %s", exc)
+                return None
+
+    def get_knowledge_base(self, session_id: str) -> list[dict]:
+        """Retrieve all knowledge base items for a session."""
+        with self._cursor() as cur:
+            if cur is None:
+                return []
+            try:
+                cur.execute(
+                    """
+                    SELECT id, file_name, file_type, file_path, metadata, created_at
+                    FROM knowledge_base
+                    WHERE session_id = %s
+                    ORDER BY created_at DESC;
+                    """,
+                    (session_id,),
+                )
+                results = []
+                for row in cur.fetchall():
+                    results.append({
+                        "id": str(row[0]),
+                        "file_name": row[1],
+                        "file_type": row[2],
+                        "file_path": row[3],
+                        "metadata": json.loads(row[4]) if row[4] else {},
+                        "created_at": row[5].isoformat() if row[5] else None,
+                    })
+                return results
+            except Exception as exc:
+                logger.exception("Error retrieving knowledge base: %s", exc)
+                return []
+
+    def save_execution_history(self, session_id: str, campaign_name: str, execution_type: str, 
+                              input_data: dict, output_data: dict | None = None, status: str = "success",
+                              error_message: str | None = None, execution_time_ms: int = 0) -> str | None:
+        """Save execution/generation history to Supabase."""
+        with self._cursor() as cur:
+            if cur is None:
+                return None
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO execution_history (session_id, campaign_name, execution_type, input_data, 
+                                                    output_data, status, error_message, execution_time_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                    """,
+                    (session_id, campaign_name, execution_type, json.dumps(input_data), 
+                     json.dumps(output_data or {}), status, error_message, execution_time_ms),
+                )
+                result = cur.fetchone()
+                return str(result[0]) if result else None
+            except Exception as exc:
+                logger.exception("Error saving execution history: %s", exc)
+                return None
+
+    def get_execution_history(self, session_id: str, limit: int = 50) -> list[dict]:
+        """Retrieve execution history for a session."""
+        with self._cursor() as cur:
+            if cur is None:
+                return []
+            try:
+                cur.execute(
+                    """
+                    SELECT id, campaign_name, execution_type, input_data, output_data, status, 
+                           error_message, execution_time_ms, created_at
+                    FROM execution_history
+                    WHERE session_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s;
+                    """,
+                    (session_id, limit),
+                )
+                results = []
+                for row in cur.fetchall():
+                    results.append({
+                        "id": str(row[0]),
+                        "campaign_name": row[1],
+                        "execution_type": row[2],
+                        "input_data": json.loads(row[3]) if row[3] else {},
+                        "output_data": json.loads(row[4]) if row[4] else {},
+                        "status": row[5],
+                        "error_message": row[6],
+                        "execution_time_ms": row[7],
+                        "created_at": row[8].isoformat() if row[8] else None,
+                    })
+                return results
+            except Exception as exc:
+                logger.exception("Error retrieving execution history: %s", exc)
+                return []
 
 
 class CampaignDatabase(BaseDatabase):
