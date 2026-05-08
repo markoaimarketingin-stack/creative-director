@@ -4,12 +4,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+import os
+import json
+
 from app.api.routes.creatives import router as creatives_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.suggestions import router as suggestions_router
 from app.api.routes.providers import router as providers_router
 from app.core.config import get_settings
 from app.services.engine import ServiceContainer
+
+# Write Google credentials from environment variable if present
+google_creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+if google_creds_json:
+    try:
+        # Parse and validate JSON
+        creds_dict = json.loads(google_creds_json)
+        # Write to file
+        with open("google-credentials.json", "w") as f:
+            json.dump(creds_dict, f)
+        print("[INFO] Google credentials written to google-credentials.json")
+    except Exception as e:
+        print(f"[WARNING] Failed to write Google credentials: {e}")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
