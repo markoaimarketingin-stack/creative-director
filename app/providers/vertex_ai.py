@@ -1,10 +1,12 @@
 import asyncio
 import base64
 import binascii
+import io
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+from PIL import Image
 
 from app.core.config import Settings
 from app.models import CreativeStatus, GeneratedCreative, Platform, VisualConcept
@@ -128,12 +130,14 @@ class VertexAIClient:
             return []
         urls: list[str] = []
         for image in images:
-            image_bytes = getattr(image, "_image_bytes", None) or getattr(image, "data", None)
+            image_bytes = self._extract_image_bytes(image)
             if not image_bytes:
                 continue
             image_path = self._save_image_locally(image_bytes)
             if image_path:
                 urls.append(f"/output/{image_path}")
+        if not urls:
+            print(f"[VERTEX_AI] Parsed {len(images)} image object(s) but extracted 0 usable byte payloads")
         return urls
 
     def _extract_images(self, response) -> list:
@@ -174,10 +178,41 @@ class VertexAIClient:
         source = sample_images[0]
         try:
             image_bytes = self._read_reference_source(source)
-            return VertexImage(image_bytes=image_bytes)
+            normalized = self._normalize_image_bytes_for_vertex(image_bytes)
+            return VertexImage(image_bytes=normalized)
         except Exception as exc:
             print(f"[VERTEX_AI] Failed to parse sample image as base image: {exc}")
             return None
+
+    def _normalize_image_bytes_for_vertex(self, image_bytes: bytes) -> bytes:
+        """Normalize user-provided sample image to a safe RGB PNG for Vertex edit mode."""
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            # Remove alpha and convert to RGB for broader backend compatibility.
+            if img.mode not in {"RGB", "L"}:
+                img = img.convert("RGB")
+            elif img.mode == "L":
+                img = img.convert("RGB")
+
+            # Constrain maximum side to reduce backend processing failures.
+            max_side = 1536
+            if max(img.size) > max_side:
+                img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", optimize=True)
+            return buf.getvalue()
+
+    def _extract_image_bytes(self, image_obj) -> bytes | None:
+        candidates = (
+            getattr(image_obj, "_image_bytes", None),
+            getattr(image_obj, "data", None),
+            getattr(image_obj, "image_bytes", None),
+            getattr(image_obj, "bytes", None),
+        )
+        for candidate in candidates:
+            if isinstance(candidate, bytes) and candidate:
+                return candidate
+        return None
 
     def _read_reference_source(self, source: str) -> bytes:
         if source.startswith("data:"):
