@@ -13,7 +13,8 @@ try:
     from google.cloud import aiplatform
     from google.cloud.aiplatform.generative_models import GenerativeModel, Part
     VERTEX_AI_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"[VERTEX_AI] Import failed: {e}")
     VERTEX_AI_AVAILABLE = False
 
 
