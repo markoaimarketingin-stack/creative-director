@@ -10,7 +10,6 @@ from app.core.config import Settings
 from app.models import CreativeStatus, GeneratedCreative, Platform, VisualConcept
 
 ImageGenerationModel = None
-RawReferenceImage = None
 VertexImage = None
 aiplatform = None
 VERTEX_AI_AVAILABLE = False
@@ -18,7 +17,7 @@ VERTEX_AI_IMPORT_ERROR = None
 
 try:
     from vertexai.preview.vision_models import Image as VertexImage
-    from vertexai.preview.vision_models import ImageGenerationModel, RawReferenceImage
+    from vertexai.preview.vision_models import ImageGenerationModel
     from google.cloud import aiplatform
 
     VERTEX_AI_AVAILABLE = True
@@ -26,7 +25,7 @@ except ImportError as e:
     try:
         # Fallback path for older/newer SDK layout changes.
         from vertexai.vision_models import Image as VertexImage
-        from vertexai.vision_models import ImageGenerationModel, RawReferenceImage
+        from vertexai.vision_models import ImageGenerationModel
         from google.cloud import aiplatform
 
         VERTEX_AI_AVAILABLE = True
@@ -143,31 +142,30 @@ class VertexAIClient:
             "aspect_ratio": self._get_vertex_aspect_ratio(concept.aspect_ratio),
         }
         if sample_images:
-            references = self._build_reference_images(sample_images)
-            if references:
-                print(f"[VERTEX_AI] Using {len(references)} style reference image(s)")
+            base_image = self._build_base_image(sample_images)
+            if base_image is not None:
+                print("[VERTEX_AI] Using sample image as base_image for edit mode")
                 try:
-                    # edit_image supports reference_images in the current SDK path.
                     return self._client.edit_image(
                         prompt=concept.generation_prompt,
-                        reference_images=references,
+                        base_image=base_image,
+                        edit_mode="product-image",
                         number_of_images=1,
                     )
                 except Exception as exc:
-                    print(f"[VERTEX_AI] edit_image with references failed, fallback to text-only generation: {exc}")
+                    print(f"[VERTEX_AI] edit_image with base sample failed, fallback to text-only generation: {exc}")
         return self._client.generate_images(**kwargs)
 
-    def _build_reference_images(self, sample_images: list[str]) -> list[RawReferenceImage]:
-        references: list[RawReferenceImage] = []
-        for index, source in enumerate(sample_images[:3], start=1):
-            try:
-                image_bytes = self._read_reference_source(source)
-                vertex_image = VertexImage(image_bytes=image_bytes)
-                # Vertex reference_id must be numeric for this endpoint.
-                references.append(RawReferenceImage(reference_id=index, image=vertex_image))
-            except Exception as exc:
-                print(f"[VERTEX_AI] Failed to parse reference image {index}: {exc}")
-        return references
+    def _build_base_image(self, sample_images: list[str]):
+        if not sample_images:
+            return None
+        source = sample_images[0]
+        try:
+            image_bytes = self._read_reference_source(source)
+            return VertexImage(image_bytes=image_bytes)
+        except Exception as exc:
+            print(f"[VERTEX_AI] Failed to parse sample image as base image: {exc}")
+            return None
 
     def _read_reference_source(self, source: str) -> bytes:
         if source.startswith("data:"):
