@@ -10,20 +10,23 @@ from app.core.config import Settings
 from app.models import CreativeStatus, GeneratedCreative, Platform, VisualConcept
 
 ImageGenerationModel = None
-StyleReferenceImage = None
+RawReferenceImage = None
+VertexImage = None
 aiplatform = None
 VERTEX_AI_AVAILABLE = False
 VERTEX_AI_IMPORT_ERROR = None
 
 try:
-    from vertexai.preview.vision_models import ImageGenerationModel, StyleReferenceImage
+    from vertexai.preview.vision_models import Image as VertexImage
+    from vertexai.preview.vision_models import ImageGenerationModel, RawReferenceImage
     from google.cloud import aiplatform
 
     VERTEX_AI_AVAILABLE = True
 except ImportError as e:
     try:
         # Fallback path for older/newer SDK layout changes.
-        from vertexai.vision_models import ImageGenerationModel, StyleReferenceImage
+        from vertexai.vision_models import Image as VertexImage
+        from vertexai.vision_models import ImageGenerationModel, RawReferenceImage
         from google.cloud import aiplatform
 
         VERTEX_AI_AVAILABLE = True
@@ -154,13 +157,14 @@ class VertexAIClient:
                     print(f"[VERTEX_AI] edit_image with references failed, fallback to text-only generation: {exc}")
         return self._client.generate_images(**kwargs)
 
-    def _build_reference_images(self, sample_images: list[str]) -> list[StyleReferenceImage]:
-        references: list[StyleReferenceImage] = []
+    def _build_reference_images(self, sample_images: list[str]) -> list[RawReferenceImage]:
+        references: list[RawReferenceImage] = []
         for index, source in enumerate(sample_images[:3], start=1):
             try:
                 image_bytes = self._read_reference_source(source)
+                vertex_image = VertexImage(image_bytes=image_bytes)
                 # Vertex reference_id must be numeric for this endpoint.
-                references.append(StyleReferenceImage(reference_id=index, image=image_bytes))
+                references.append(RawReferenceImage(reference_id=index, image=vertex_image))
             except Exception as exc:
                 print(f"[VERTEX_AI] Failed to parse reference image {index}: {exc}")
         return references
