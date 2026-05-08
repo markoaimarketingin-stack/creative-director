@@ -81,31 +81,36 @@ class CreativeDirectorEngine:
 
         generated_creatives = []
         has_reference_images = bool(payload.sample_images)
+        vertex_ready = bool(
+            self._vertex_client
+            and getattr(self._vertex_client, "_project_id", None)
+            and self._vertex_client._client is not None
+        )
+        hf_ready = bool(self._hf_client and getattr(self._hf_client, "_api_key", None))
 
-        if has_reference_images:
-            vertex_ready = self._vertex_client and getattr(self._vertex_client, "_project_id", None) and self._vertex_client._client is not None
-            hf_ready = self._hf_client and getattr(self._hf_client, "_api_key", None)
-            
-            if vertex_ready:
-                print(f"[INFO] Using Vertex AI with {len(visual_concepts)} creatives")
-                generated_creatives = await self._generate_images_with_timeout(
-                    self._vertex_client.generate_batch(
-                        visual_concepts,
-                        platform=payload.platform,
-                        sample_images=payload.sample_images,
-                    )
+        if vertex_ready:
+            print(f"[INFO] Using Vertex AI with {len(visual_concepts)} creatives")
+            generated_creatives = await self._generate_images_with_timeout(
+                self._vertex_client.generate_batch(
+                    visual_concepts,
+                    platform=payload.platform,
+                    sample_images=payload.sample_images,
                 )
-            elif hf_ready:
-                print(f"[INFO] Using HuggingFace with {len(visual_concepts)} creatives")
-                generated_creatives = await self._generate_images_with_timeout(
-                    self._hf_client.generate_batch(
-                        visual_concepts,
-                        platform=payload.platform,
-                        sample_images=payload.sample_images,
-                    )
+            )
+        elif has_reference_images and hf_ready:
+            print(f"[INFO] Using HuggingFace with {len(visual_concepts)} creatives")
+            generated_creatives = await self._generate_images_with_timeout(
+                self._hf_client.generate_batch(
+                    visual_concepts,
+                    platform=payload.platform,
+                    sample_images=payload.sample_images,
                 )
-            else:
-                print(f"[WARNING] No image provider available for reference images. Vertex ready: {vertex_ready}, HF ready: {hf_ready}")
+            )
+        elif has_reference_images:
+            print(
+                "[WARNING] No image provider available for reference images. "
+                f"Vertex ready: {vertex_ready}, HF ready: {hf_ready}"
+            )
 
         if (
             not has_reference_images
