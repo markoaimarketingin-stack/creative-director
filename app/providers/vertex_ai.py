@@ -122,8 +122,9 @@ class VertexAIClient:
     async def _call_imagen_api(self, concept: VisualConcept, sample_images: list[str] | None = None) -> list[str]:
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(None, self._generate_images_sync, concept, sample_images)
-        images = getattr(response, "images", None)
+        images = self._extract_images(response)
         if not images:
+            print(f"[VERTEX_AI] No images in response (type={type(response).__name__})")
             return []
         urls: list[str] = []
         for image in images:
@@ -134,6 +135,17 @@ class VertexAIClient:
             if image_path:
                 urls.append(f"/output/{image_path}")
         return urls
+
+    def _extract_images(self, response) -> list:
+        images = getattr(response, "images", None)
+        if images:
+            return list(images)
+        try:
+            # Some Vertex SDK responses are list-like rather than exposing `.images`.
+            items = list(response)
+            return items
+        except Exception:
+            return []
 
     def _generate_images_sync(self, concept: VisualConcept, sample_images: list[str] | None = None):
         kwargs = {
