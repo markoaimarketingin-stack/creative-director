@@ -41,17 +41,26 @@ class VertexAIClient:
         self._project_id = settings.vertex_ai_project_id
         self._location = settings.vertex_ai_location
         self._model_name = settings.vertex_ai_image_model
+        self._edit_model_name = "imagen-3.0-capability-001"
         self._client = None
+        self._edit_client = None
 
         if self._project_id and VERTEX_AI_AVAILABLE:
             try:
                 print(f"[VERTEX_AI] Initializing with project={self._project_id}, location={self._location}")
                 aiplatform.init(project=self._project_id, location=self._location)
                 self._client = ImageGenerationModel.from_pretrained(self._model_name)
+                try:
+                    self._edit_client = ImageGenerationModel.from_pretrained(self._edit_model_name)
+                    print(f"[VERTEX_AI] Initialized edit model: {self._edit_model_name}")
+                except Exception as edit_exc:
+                    print(f"[VERTEX_AI] Edit model init failed ({self._edit_model_name}): {edit_exc}")
+                    self._edit_client = None
                 print("[VERTEX_AI] Initialized Vertex AI Imagen client")
             except Exception as e:
                 print(f"[VERTEX_AI] Failed to initialize: {type(e).__name__}: {e}")
                 self._client = None
+                self._edit_client = None
         else:
             print(
                 "[VERTEX_AI] Skipped - "
@@ -159,10 +168,10 @@ class VertexAIClient:
         }
         if sample_images:
             base_image = self._build_base_image(sample_images)
-            if base_image is not None:
+            if base_image is not None and self._edit_client is not None:
                 print("[VERTEX_AI] Using sample image as base_image for edit mode")
                 try:
-                    return self._client.edit_image(
+                    return self._edit_client.edit_image(
                         prompt=concept.generation_prompt,
                         base_image=base_image,
                         edit_mode="product-image",
@@ -170,6 +179,8 @@ class VertexAIClient:
                     )
                 except Exception as exc:
                     print(f"[VERTEX_AI] edit_image with base sample failed, fallback to text-only generation: {exc}")
+            elif base_image is not None and self._edit_client is None:
+                print("[VERTEX_AI] Edit model unavailable; using text-only generation fallback")
         return self._client.generate_images(**kwargs)
 
     def _build_base_image(self, sample_images: list[str]):
