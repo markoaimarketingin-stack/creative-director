@@ -159,7 +159,8 @@ class VertexAIClient:
         for index, source in enumerate(sample_images[:3], start=1):
             try:
                 image_bytes = self._read_reference_source(source)
-                references.append(StyleReferenceImage(reference_id=f"ref-{index}", image=image_bytes))
+                # Vertex reference_id must be numeric for this endpoint.
+                references.append(StyleReferenceImage(reference_id=index, image=image_bytes))
             except Exception as exc:
                 print(f"[VERTEX_AI] Failed to parse reference image {index}: {exc}")
         return references
