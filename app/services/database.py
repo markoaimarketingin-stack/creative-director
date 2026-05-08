@@ -276,6 +276,43 @@ class ChatDatabase(BaseDatabase):
 
 
 class CampaignDatabase(BaseDatabase):
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self._init_db()
+
+    def _init_db(self) -> None:
+        with self._cursor() as cur:
+            if cur is None:
+                return
+            # Create creative_campaigns table if it doesn't exist
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS creative_campaigns (
+                    id SERIAL PRIMARY KEY,
+                    campaign_name TEXT NOT NULL,
+                    campaign_slug TEXT,
+                    brand_name TEXT,
+                    platform VARCHAR(50),
+                    objective VARCHAR(100),
+                    input_data JSONB,
+                    hooks JSONB,
+                    angles JSONB,
+                    ad_copies JSONB,
+                    visual_concepts JSONB,
+                    generated_creatives JSONB,
+                    scored_creatives JSONB,
+                    creative_assets JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            # Create index if it doesn't exist
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_creative_campaigns_slug ON creative_campaigns(campaign_slug);
+                """
+            )
+
     def save_campaign(self, package: CampaignPackage) -> str | None:
         with self._cursor() as cur:
             if cur is None:
