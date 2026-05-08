@@ -62,7 +62,7 @@ class VertexAIClient:
             )
 
         try:
-            image_urls = await self._call_imagen_api(concept)
+            image_urls = await self._call_imagen_api(concept, sample_images=sample_images)
             
             if image_urls:
                 return GeneratedCreative(
@@ -95,7 +95,7 @@ class VertexAIClient:
                 error=str(e),
             )
 
-    async def _call_imagen_api(self, concept: VisualConcept) -> list[str]:
+    async def _call_imagen_api(self, concept: VisualConcept, sample_images: list[str] | None = None) -> list[str]:
         """Call Vertex AI Imagen API using the official SDK."""
         try:
             # Run SDK call in executor to avoid blocking event loop
@@ -103,7 +103,8 @@ class VertexAIClient:
             response = await loop.run_in_executor(
                 None,
                 self._generate_images_sync,
-                concept
+                concept,
+                sample_images
             )
             
             if response and hasattr(response, 'images') and response.images:
@@ -121,13 +122,36 @@ class VertexAIClient:
             print(f"Vertex AI API error: {e}")
             raise Exception(f"Failed to call Vertex AI API: {e}")
 
-    def _generate_images_sync(self, concept: VisualConcept):
-        """Synchronous image generation using Vertex AI SDK."""
+    def _generate_images_sync(self, concept: VisualConcept, sample_images: list[str] | None = None):
+        """Synchronous image generation using Vertex AI SDK with optional reference images."""
         try:
-            response = self._client.generate_images(
-                prompt=concept.generation_prompt,
-                number_of_images=1,
-                aspect_ratio=self._get_vertex_aspect_ratio(concept.aspect_ratio),
+            # Prepare kwargs
+            kwargs = {
+                "prompt": concept.generation_prompt,
+                "number_of_images": 1,
+                "aspect_ratio": self._get_vertex_aspect_ratio(concept.aspect_ratio),
+            }
+            
+            # Add reference images if provided (up to 4)
+            if sample_images:
+                reference_images = []
+                for img_path in sample_images[:self._MAX_REFERENCE_IMAGES]:
+                    try:
+                        # Load image and convert to bytes
+                        with open(img_path, 'rb') as f:
+                            img_data = f.read()
+                        reference_images.append(Part.from_data(img_data, mime_type="image/png"))
+                    except Exception as e:
+                        print(f"Failed to load reference image {img_path}: {e}")
+                
+                if reference_images:
+                    kwargs["reference_images"] = reference_images
+            
+            response = self._client.generate_images(**kwargs)
+            return response
+        except Exception as e:
+            print(f"Vertex AI generation failed: {e}")
+            raise
             )
             return response
         except Exception as e:

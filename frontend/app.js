@@ -694,18 +694,129 @@ async function sendChatMessage() {
 async function loadChatHistory() {
   if (!chatSessionId) return;
   try {
-    const res = await fetch(`${API_BASE_URL}/chat-history/${chatSessionId}`);
+    // Load ALL session data: chat history, knowledge base, and execution history
+    const res = await fetch(`${API_BASE_URL}/session-data/${chatSessionId}`);
     if (!res.ok) return;
     const data = await res.json();
-    if (data.history && data.history.length > 0) {
+    
+    // Load chat history
+    if (data.chat_history && data.chat_history.length > 0) {
       chatBody.innerHTML = "";
-      data.history.forEach((msg) => {
+      data.chat_history.forEach((msg) => {
         appendChat(msg.role === "assistant" ? "ai" : "user", esc(msg.content));
       });
-      chatContext.history = data.history;
+      chatContext.history = data.chat_history;
+    }
+    
+    // Load knowledge base
+    if (data.knowledge_base && data.knowledge_base.length > 0) {
+      displayKnowledgeBase(data.knowledge_base);
+    }
+    
+    // Load execution history
+    if (data.execution_history && data.execution_history.length > 0) {
+      displayExecutionHistory(data.execution_history);
     }
   } catch (e) {
-    console.error("Failed to load chat history:", e);
+    console.error("Failed to load session data:", e);
+  }
+}
+
+function displayKnowledgeBase(kbItems) {
+  const kbPanel = document.getElementById("knowledge-base-panel") || createKBPanel();
+  const kbList = kbPanel.querySelector(".kb-items-list") || createKBList(kbPanel);
+  
+  kbList.innerHTML = "<h4>Previous Knowledge Base Items:</h4>";
+  kbItems.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = "kb-item";
+    div.innerHTML = `
+      <div class="kb-item-name">${esc(item.file_name)}</div>
+      <div class="kb-item-meta">Type: ${esc(item.file_type)} | Added: ${new Date(item.created_at).toLocaleDateString()}</div>
+      <button onclick="selectKBItem('${esc(item.file_path)}')">Use as Reference</button>
+    `;
+    kbList.appendChild(div);
+  });
+}
+
+function displayExecutionHistory(executions) {
+  const historyPanel = document.getElementById("history-panel") || createHistoryPanel();
+  const historyList = historyPanel.querySelector(".history-items") || createHistoryList(historyPanel);
+  
+  historyList.innerHTML = "<h4>Previous Campaign Executions:</h4>";
+  executions.forEach((exec) => {
+    const div = document.createElement("div");
+    div.className = `history-item ${exec.status}`;
+    const timestamp = new Date(exec.created_at).toLocaleString();
+    const duration = exec.execution_time_ms ? `${Math.round(exec.execution_time_ms / 1000)}s` : "N/A";
+    
+    div.innerHTML = `
+      <div class="history-header">
+        <span class="history-name">${esc(exec.campaign_name)}</span>
+        <span class="history-type">${esc(exec.execution_type)}</span>
+        <span class="history-status ${exec.status}">${exec.status.toUpperCase()}</span>
+      </div>
+      <div class="history-meta">
+        <span>Duration: ${duration}</span>
+        <span>Executed: ${timestamp}</span>
+      </div>
+      ${exec.error_message ? `<div class="history-error">Error: ${esc(exec.error_message)}</div>` : ""}
+      <button onclick="expandExecutionDetails('${exec.id}', this)">View Details</button>
+      <div class="execution-details" style="display:none;" data-exec-id="${exec.id}"></div>
+    `;
+    historyList.appendChild(div);
+  });
+}
+
+function createKBPanel() {
+  const panel = document.createElement("div");
+  panel.id = "knowledge-base-panel";
+  panel.className = "kb-panel";
+  document.body.appendChild(panel);
+  return panel;
+}
+
+function createKBList(panel) {
+  const list = document.createElement("div");
+  list.className = "kb-items-list";
+  panel.appendChild(list);
+  return list;
+}
+
+function createHistoryPanel() {
+  const panel = document.getElementById("history-panel") || document.createElement("div");
+  if (!panel.id) {
+    panel.id = "history-panel";
+    panel.className = "history-panel";
+    document.body.appendChild(panel);
+  }
+  return panel;
+}
+
+function createHistoryList(panel) {
+  const list = document.createElement("div");
+  list.className = "history-items";
+  panel.appendChild(list);
+  return list;
+}
+
+function selectKBItem(filepath) {
+  if (!selectedKnowledgeImages.includes(filepath)) {
+    selectedKnowledgeImages.push(filepath);
+    refreshSampleHint();
+    console.log("Added reference:", filepath);
+  }
+}
+
+function expandExecutionDetails(execId, button) {
+  const detailsDiv = document.querySelector(`[data-exec-id="${execId}"]`);
+  if (detailsDiv.style.display === "none") {
+    detailsDiv.style.display = "block";
+    detailsDiv.innerHTML = `<pre>${JSON.stringify({execution_id: execId}, null, 2)}</pre>`;
+    button.textContent = "Hide Details";
+  } else {
+    detailsDiv.style.display = "none";
+    button.textContent = "View Details";
   }
 }
 
