@@ -1,24 +1,29 @@
 import asyncio
-import os
+import base64
+import binascii
 from pathlib import Path
+from urllib.parse import urlparse
+
+import httpx
 
 from app.core.config import Settings
 from app.models import CreativeStatus, GeneratedCreative, Platform, VisualConcept
 
 ImageGenerationModel = None
+StyleReferenceImage = None
 aiplatform = None
 VERTEX_AI_AVAILABLE = False
 VERTEX_AI_IMPORT_ERROR = None
 
 try:
-    from vertexai.preview.vision_models import ImageGenerationModel
+    from vertexai.preview.vision_models import ImageGenerationModel, StyleReferenceImage
     from google.cloud import aiplatform
 
     VERTEX_AI_AVAILABLE = True
 except ImportError as e:
     try:
         # Fallback path for older/newer SDK layout changes.
-        from vertexai.vision_models import ImageGenerationModel
+        from vertexai.vision_models import ImageGenerationModel, StyleReferenceImage
         from google.cloud import aiplatform
 
         VERTEX_AI_AVAILABLE = True
@@ -84,7 +89,7 @@ class VertexAIClient:
             )
 
         try:
-            image_urls = await self._call_imagen_api(concept)
+            image_urls = await self._call_imagen_api(concept, sample_images=sample_images)
             if image_urls:
                 return GeneratedCreative(
                     concept_id=concept.concept_id,
@@ -112,9 +117,9 @@ class VertexAIClient:
                 error=str(e),
             )
 
-    async def _call_imagen_api(self, concept: VisualConcept) -> list[str]:
+    async def _call_imagen_api(self, concept: VisualConcept, sample_images: list[str] | None = None) -> list[str]:
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, self._generate_images_sync, concept)
+        response = await loop.run_in_executor(None, self._generate_images_sync, concept, sample_images)
         images = getattr(response, "images", None)
         if not images:
             return []
@@ -128,13 +133,62 @@ class VertexAIClient:
                 urls.append(f"/output/{image_path}")
         return urls
 
-    def _generate_images_sync(self, concept: VisualConcept):
+    def _generate_images_sync(self, concept: VisualConcept, sample_images: list[str] | None = None):
         kwargs = {
             "prompt": concept.generation_prompt,
             "number_of_images": 1,
             "aspect_ratio": self._get_vertex_aspect_ratio(concept.aspect_ratio),
         }
+        if sample_images:
+            references = self._build_reference_images(sample_images)
+            if references:
+                print(f"[VERTEX_AI] Using {len(references)} style reference image(s)")
+                try:
+                    # edit_image supports reference_images in the current SDK path.
+                    return self._client.edit_image(
+                        prompt=concept.generation_prompt,
+                        reference_images=references,
+                        number_of_images=1,
+                    )
+                except Exception as exc:
+                    print(f"[VERTEX_AI] edit_image with references failed, fallback to text-only generation: {exc}")
         return self._client.generate_images(**kwargs)
+
+    def _build_reference_images(self, sample_images: list[str]) -> list[StyleReferenceImage]:
+        references: list[StyleReferenceImage] = []
+        for index, source in enumerate(sample_images[:3], start=1):
+            try:
+                image_bytes = self._read_reference_source(source)
+                references.append(StyleReferenceImage(reference_id=f"ref-{index}", image=image_bytes))
+            except Exception as exc:
+                print(f"[VERTEX_AI] Failed to parse reference image {index}: {exc}")
+        return references
+
+    def _read_reference_source(self, source: str) -> bytes:
+        if source.startswith("data:"):
+            encoded = source.split(",", 1)[1]
+            try:
+                return base64.b64decode(encoded)
+            except (binascii.Error, ValueError) as exc:
+                raise ValueError(f"Invalid base64 data URL: {exc}") from exc
+
+        if source.startswith("/output/"):
+            relative = source[len("/output/"):].lstrip("/")
+            output_path = Path("output") / relative
+            if output_path.exists():
+                return output_path.read_bytes()
+
+        path = Path(source)
+        if path.exists():
+            return path.read_bytes()
+
+        parsed = urlparse(source)
+        if parsed.scheme in {"http", "https"}:
+            response = httpx.get(source, timeout=20.0, follow_redirects=True)
+            response.raise_for_status()
+            return response.content
+
+        raise ValueError(f"Unsupported reference image source: {source}")
 
     def _save_image_locally(self, image_data: bytes) -> str | None:
         try:
