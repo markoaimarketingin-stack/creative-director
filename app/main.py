@@ -21,8 +21,11 @@ if google_creds_json:
         # Parse and validate JSON
         creds_dict = json.loads(google_creds_json)
         # Write to file
-        with open("google-credentials.json", "w") as f:
+        creds_path = "google-credentials.json"
+        with open(creds_path, "w") as f:
             json.dump(creds_dict, f)
+        # Ensure Google SDKs can discover credentials in container environments.
+        os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", creds_path)
         print("[INFO] Google credentials written to google-credentials.json")
     except Exception as e:
         print(f"[WARNING] Failed to write Google credentials: {e}")
