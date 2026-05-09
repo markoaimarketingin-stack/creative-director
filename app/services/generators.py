@@ -392,9 +392,11 @@ def _polish_ad_copy(payload: CreativeInput, item: AdCopy, *, index: int) -> AdCo
     }
     if not headline or headline.lower() in generic_headlines:
         headline = _fallback_headline(payload, item.angle_name, index=index)
+    headline = _normalize_headline_completion(headline)
 
     if cta.lower() in {"generate ads", "generate", "click here", "learn", "buy"}:
         cta = _default_cta(payload)
+    cta = _normalize_cta(cta, payload)
 
     if payload.brand_name.lower() not in primary_text.lower():
         primary_text = f"{payload.brand_name}: {primary_text}".strip(": ")
@@ -408,6 +410,28 @@ def _polish_ad_copy(payload: CreativeInput, item: AdCopy, *, index: int) -> AdCo
         cta=cta,
         description=description,
     )
+
+
+def _normalize_headline_completion(headline: str) -> str:
+    normalized = " ".join(headline.split()).strip()
+    if not normalized:
+        return normalized
+    # Fix dangling time-number headlines like "Food In 10" -> "Food In 10 Minutes".
+    if re.search(r"\b(?:in|within|under)\s+\d{1,3}$", normalized, flags=re.IGNORECASE):
+        return f"{normalized} Minutes"
+    return normalized
+
+
+def _normalize_cta(cta: str, payload: CreativeInput) -> str:
+    normalized = " ".join(cta.split()).strip()
+    if not normalized:
+        return _default_cta(payload)
+    words = normalized.split()
+    if len(words) == 1:
+        return _default_cta(payload)
+    if len(words) > 4:
+        return " ".join(words[:4])
+    return normalized
 
 
 def _fallback_headline(payload: CreativeInput, angle_name: str, *, index: int) -> str:

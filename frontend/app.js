@@ -27,6 +27,9 @@ const exportsOutput = byId("exports-output");
 const sampleInput = byId("f-samples");
 const sampleHint = byId("f-samples-hint");
 const logoInput = byId("f-logo");
+const referenceSimilarityInput = byId("f-ref-sim");
+const referenceSimilarityValue = byId("f-ref-sim-value");
+const referenceSimilarityWrap = byId("f-ref-sim-wrap");
 const btnChatHistory = byId("btn-chat-history");
 const btnChatNew = byId("btn-chat-new");
 const btnSidebarChat = byId("btn-sidebar-chat");
@@ -73,9 +76,17 @@ function refreshSampleHint(message, bad = false) {
   const total = totalSelectedReferences();
   if (!total) {
     setSampleHint(defaultSampleHint());
+    updateReferenceSimilarityVisibility();
     return;
   }
   setSampleHint(`Using ${total} reference image(s).`);
+  updateReferenceSimilarityVisibility();
+}
+
+function updateReferenceSimilarityVisibility() {
+  if (!referenceSimilarityWrap) return;
+  const shouldShow = totalSelectedReferences() > 0;
+  referenceSimilarityWrap.classList.toggle("hidden", !shouldShow);
 }
 
 function sampleFileKey(file) {
@@ -858,6 +869,11 @@ async function buildPayload() {
   const copy_count = validateCount(byId("f-copy").value, 1, 10, 5);
   const concept_count = validateCount(byId("f-concepts").value, 1, 10, 5);
 
+  const rawSimilarity = Number.parseFloat(referenceSimilarityInput?.value ?? "0.5");
+  const safeSimilarity = Number.isFinite(rawSimilarity)
+    ? Math.min(1, Math.max(0, rawSimilarity))
+    : 0.5;
+
   const payload = {
     brand_name: byId("f-brand").value.trim(),
     product_description: byId("f-desc").value.trim(),
@@ -870,6 +886,7 @@ async function buildPayload() {
     visual_style: byId("f-visual").value.trim(),
     brand_colors: byId("f-brand-colors").value.split(",").map((s) => s.trim()).filter(Boolean),
     brand_fonts: byId("f-brand-fonts").value.split(",").map((s) => s.trim()).filter(Boolean),
+    reference_similarity: safeSimilarity,
     hook_count,
     angle_count,
     copy_count,
@@ -926,6 +943,18 @@ async function buildPayload() {
 }
 
 function wireEvents() {
+  if (referenceSimilarityInput && referenceSimilarityValue) {
+    const syncReferenceSimilarityValue = () => {
+      const raw = Number.parseFloat(referenceSimilarityInput.value);
+      const safe = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0.5;
+      referenceSimilarityInput.value = safe.toFixed(2);
+      referenceSimilarityValue.textContent = safe.toFixed(2);
+    };
+    referenceSimilarityInput.addEventListener("input", syncReferenceSimilarityValue);
+    syncReferenceSimilarityValue();
+  }
+  updateReferenceSimilarityVisibility();
+
   // Validate count inputs against backend constraints
   const countConstraints = {
     "f-hooks": { min: 1, max: 10 },

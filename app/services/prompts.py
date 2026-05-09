@@ -89,7 +89,8 @@ def angle_prompt(payload: CreativeInput) -> str:
         "- Each angle must be materially different in sales argument, not just tone.\n"
         "- Anchor each angle in a concrete buyer problem, desired outcome, or proof mechanism.\n"
         "- Prefer direct-response utility over abstract storytelling.\n"
-        "- Avoid repeating the same benefit in five ways."
+        "- Avoid repeating the same benefit in five ways.\n"
+        "- Angle names must be short, specific, and execution-ready (2-4 words)."
     )
 
 
@@ -111,7 +112,8 @@ def ad_copy_prompt(payload: CreativeInput, hooks: list[Hook], angles: list[Messa
         "- Do NOT explain the product or use filler words\n"
         "- Must feel premium, sharp, and instantly engaging\n\n"
         "2. HEADLINE:\n"
-        "- Max 6 words\n"
+        "- Max 7 words\n"
+        "- Must be a complete phrase, never clipped\n"
         "- Focus on clear benefit, aspiration, or transformation\n"
         "- Strong, bold, and direct\n"
         "- No punctuation unless absolutely necessary\n\n"
@@ -123,6 +125,10 @@ def ad_copy_prompt(payload: CreativeInput, hooks: list[Hook], angles: list[Messa
         "- Rotate between these 3 styles: Emotional Hook, Curiosity Hook, Minimalist Premium\n"
         "- Avoid generic phrases like 'high quality', 'best product', 'crafted for you'\n"
         "- Prefer emotional triggers: confidence, status, transformation, desire, curiosity\n\n"
+        "5. COMPLETENESS RULE (CRITICAL):\n"
+        "- Never end headline with a dangling number/token (bad: 'Food in 10').\n"
+        "- If a number implies time, include the unit (good: 'Food in 10 Minutes').\n"
+        "- CTA must be an actual action phrase, 2-4 words (examples: 'Order Now', 'Get Started', 'Learn More').\n\n"
         "OUTPUT FORMAT (STRICT JSON):\n"
         "Each object must include: `hook_text`, `angle_name`, `primary_text`, `headline`, `cta`, and `description`."
     )
@@ -158,6 +164,8 @@ def visual_concept_prompt(
         "- If brand colors are provided, color_palette must use those exact hex values as the primary palette.\n"
         "- Do not introduce unrelated dominant colors when brand colors are provided.\n"
         "- If logo reference is provided, compose negative space and focal hierarchy suitable for logo presence.\n"
+        "- If reference images are provided, borrow composition language, iconography style, and color blocking from them.\n"
+        "- Keep brand identity cues from reference images while generating a fresh ad, not a direct copy.\n"
         "\nCRITICAL - ZERO META-COMPOSITION RULE:\n"
         "DO NOT mention: laptops, monitors, screens, tablets, phones, people, hands, users, viewers, audience.\n"
         "ONLY describe: the product/interface/outcome directly.\n\n"
@@ -218,11 +226,25 @@ def premium_nanobanana_prompt(
     headline = (ad_copy.headline if ad_copy else "Work Faster")[:40]
     body = (ad_copy.primary_text if ad_copy else "Built for modern teams")[:80]
     cta = (ad_copy.cta if ad_copy else "Start Free")[:18]
+    hook_text = " ".join((ad_copy.hook_text if ad_copy else "").split())
+    hook_words = len(hook_text.split()) if hook_text else 0
+    include_hook_in_image = 0 < hook_words <= 6
+    hook_line = f'HOOK TEXT: "{hook_text}"\n' if include_hook_in_image else ""
+    hook_positioning = "- hook text above headline" if include_hook_in_image else "- no hook text inside image"
     brand_palette = ", ".join(payload.brand_colors) if payload.brand_colors else ", ".join(concept.color_palette)
     logo_rule = (
         "Include the provided logo as a clean brand mark; keep proportions intact and placement natural."
         if payload.logo_image
         else "No external logo reference provided."
+    )
+    reference_balance_rule = (
+        "Reference guidance: use the uploaded sample image as a composition/style anchor. "
+        f"Requested similarity strength: {payload.reference_similarity:.2f} on a 0.00-1.00 scale "
+        "(0.00 = loose inspiration, 1.00 = very close style/layout). "
+        "Preserve reference composition according to this strength, while keeping generated output original and brand-safe. "
+        "Do not copy pixel-for-pixel; keep it recognizably inspired but fresh."
+        if payload.sample_images
+        else "No sample reference image was provided."
     )
 
     return f"""
@@ -278,7 +300,7 @@ COMPOSITION RULES:
 
 TEXT LAYOUT:
 Render these exact text elements clearly and correctly.
-HEADLINE: "{headline}"
+{hook_line}HEADLINE: "{headline}"
 BODY TEXT: "{body}"
 CTA BUTTON: "{cta}"
 
@@ -298,6 +320,7 @@ Text positioning:
 - headline near top-left
 - body text below headline
 - CTA button near bottom-center
+{hook_positioning}
 
 IMPORTANT:
 Do NOT generate:
@@ -314,6 +337,7 @@ Do NOT generate:
 - watermarks
 
 {logo_rule}
+{reference_balance_rule}
 The advertisement itself fills the entire frame.
 The final result should look like a real Instagram sponsored ad and production-ready commercial creative.
 """

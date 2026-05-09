@@ -48,6 +48,7 @@ class CreativeInput(BaseModel):
     competitors: list[str] = Field(default_factory=list)
     visual_style: str | None = None
     sample_images: list[str] = Field(default_factory=list)
+    reference_similarity: float = Field(default=0.5, ge=0.0, le=1.0)
     brand_colors: list[str] = Field(default_factory=list)
     brand_fonts: list[str] = Field(default_factory=list)
     logo_image: str | None = None
