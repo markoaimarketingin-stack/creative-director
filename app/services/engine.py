@@ -81,6 +81,8 @@ class CreativeDirectorEngine:
 
         generated_creatives = []
         has_reference_images = bool(payload.sample_images)
+        generation_references = self._build_generation_references(payload)
+        has_generation_references = bool(generation_references)
         vertex_client_obj = self._vertex_client
         vertex_provider = (getattr(vertex_client_obj, "_provider", "imagen") if vertex_client_obj else "imagen")
         vertex_runtime_client = (
@@ -101,19 +103,19 @@ class CreativeDirectorEngine:
                 self._vertex_client.generate_batch(
                     visual_concepts,
                     platform=payload.platform,
-                    sample_images=payload.sample_images,
+                    sample_images=generation_references,
                 )
             )
-        elif has_reference_images and hf_ready:
+        elif has_generation_references and hf_ready:
             print(f"[INFO] Using HuggingFace with {len(visual_concepts)} creatives")
             generated_creatives = await self._generate_images_with_timeout(
                 self._hf_client.generate_batch(
                     visual_concepts,
                     platform=payload.platform,
-                    sample_images=payload.sample_images,
+                    sample_images=generation_references,
                 )
             )
-        elif has_reference_images:
+        elif has_generation_references:
             print(
                 "[WARNING] No image provider available for reference images. "
                 f"Vertex ready: {vertex_ready}, HF ready: {hf_ready}"
@@ -129,7 +131,7 @@ class CreativeDirectorEngine:
                 self._nanobanana_client.generate_batch(
                     visual_concepts,
                     platform=payload.platform,
-                    sample_images=payload.sample_images,
+                    sample_images=generation_references,
                 )
             )
             if fallback_creatives:
@@ -145,13 +147,13 @@ class CreativeDirectorEngine:
                 self._hf_client.generate_batch(
                     visual_concepts,
                     platform=payload.platform,
-                    sample_images=payload.sample_images,
+                    sample_images=generation_references,
                 )
             )
             if fallback_creatives:
                 generated_creatives = fallback_creatives
 
-        if has_reference_images and not generated_creatives:
+        if has_generation_references and not generated_creatives:
             print("[WARN] Sample images were provided, but no reference-image provider is configured. Reference images were not used.")
 
         if not generated_creatives:
@@ -233,6 +235,20 @@ class CreativeDirectorEngine:
             self._database.save_campaign(package)
 
         return package
+
+    @staticmethod
+    def _build_generation_references(payload: CreativeInput) -> list[str]:
+        references: list[str] = []
+        seen: set[str] = set()
+        for source in [*(payload.sample_images or []), payload.logo_image]:
+            if not source:
+                continue
+            normalized = source.strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            references.append(normalized)
+        return references
 
     async def _generate_images_with_timeout(self, coroutine):
         try:

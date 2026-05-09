@@ -43,6 +43,14 @@ except ImportError:
 
 
 class VertexAIClient:
+    _TARGET_SIZES: dict[str, tuple[int, int]] = {
+        "1:1": (1080, 1080),
+        "4:5": (1080, 1350),
+        "9:16": (1080, 1920),
+        "16:9": (1200, 675),
+        "1.91:1": (1200, 628),
+    }
+
     def __init__(self, settings: Settings) -> None:
         self._project_id = settings.vertex_ai_project_id
         self._location = settings.vertex_ai_location
@@ -178,7 +186,7 @@ class VertexAIClient:
         image_bytes_list = self._extract_gemini_image_bytes(response)
         urls: list[str] = []
         for image_bytes in image_bytes_list:
-            image_path = self._save_image_locally(image_bytes)
+            image_path = self._save_image_locally(image_bytes, aspect_ratio=concept.aspect_ratio)
             if image_path:
                 urls.append(f"/output/{image_path}")
         if not urls:
@@ -197,7 +205,7 @@ class VertexAIClient:
             image_bytes = self._extract_image_bytes(image)
             if not image_bytes:
                 continue
-            image_path = self._save_image_locally(image_bytes)
+            image_path = self._save_image_locally(image_bytes, aspect_ratio=concept.aspect_ratio)
             if image_path:
                 urls.append(f"/output/{image_path}")
         if not urls:
@@ -240,6 +248,7 @@ class VertexAIClient:
 
     def _generate_gemini_image_sync(self, concept: VisualConcept, sample_images: list[str] | None = None):
         contents: list = [concept.generation_prompt]
+        attached_count = 0
         for source in sample_images or []:
             try:
                 image_bytes = self._read_reference_source(source)
@@ -252,12 +261,28 @@ class VertexAIClient:
                         }
                     }
                 )
+                attached_count += 1
             except Exception as exc:
                 print(f"[VERTEX_AI] Failed to include sample image for Gemini image mode: {exc}")
-        return self._gemini_client.models.generate_content(
-            model=self._model_name,
-            contents=contents,
-        )
+        if sample_images:
+            print(f"[VERTEX_AI] Gemini image mode attached {attached_count}/{len(sample_images)} reference image(s)")
+        try:
+            return self._gemini_client.models.generate_content(
+                model=self._model_name,
+                contents=contents,
+                config={
+                    "response_modalities": ["IMAGE", "TEXT"],
+                    "image_config": {
+                        "aspect_ratio": self._get_vertex_aspect_ratio(concept.aspect_ratio),
+                    },
+                },
+            )
+        except Exception as exc:
+            print(f"[VERTEX_AI] Gemini image config failed, retrying without config: {exc}")
+            return self._gemini_client.models.generate_content(
+                model=self._model_name,
+                contents=contents,
+            )
 
     def _extract_gemini_image_bytes(self, response) -> list[bytes]:
         extracted: list[bytes] = []
@@ -352,7 +377,7 @@ class VertexAIClient:
 
         raise ValueError(f"Unsupported reference image source: {source}")
 
-    def _save_image_locally(self, image_data: bytes) -> str | None:
+    def _save_image_locally(self, image_data: bytes, *, aspect_ratio: str) -> str | None:
         try:
             from datetime import datetime
             import hashlib
@@ -360,16 +385,38 @@ class VertexAIClient:
             output_dir = Path("output") / "vertex_ai_images"
             output_dir.mkdir(parents=True, exist_ok=True)
 
+            normalized_bytes = self._normalize_generated_image_aspect_ratio(image_data, aspect_ratio=aspect_ratio)
             timestamp = datetime.now().isoformat().replace(":", "-")
-            content_hash = hashlib.md5(image_data).hexdigest()[:8]
+            content_hash = hashlib.md5(normalized_bytes).hexdigest()[:8]
             provider_prefix = "gemini" if self._provider == "gemini_image" else "imagen"
             filename = f"{provider_prefix}_{timestamp}_{content_hash}.png"
             filepath = output_dir / filename
-            filepath.write_bytes(image_data)
+            filepath.write_bytes(normalized_bytes)
             return f"vertex_ai_images/{filename}"
         except Exception as e:
             print(f"[VERTEX_AI] Failed to save image locally: {e}")
             return None
+
+    def _normalize_generated_image_aspect_ratio(self, image_data: bytes, *, aspect_ratio: str) -> bytes:
+        target_size = self._TARGET_SIZES.get(aspect_ratio, self._TARGET_SIZES["9:16"])
+        with Image.open(io.BytesIO(image_data)) as img:
+            if img.mode not in {"RGB", "L"}:
+                img = img.convert("RGB")
+            elif img.mode == "L":
+                img = img.convert("RGB")
+            fitted = self._cover_resize(img, target_size)
+            buf = io.BytesIO()
+            fitted.save(buf, format="PNG", optimize=True)
+            return buf.getvalue()
+
+    @staticmethod
+    def _cover_resize(image: Image.Image, target_size: tuple[int, int]) -> Image.Image:
+        target_width, target_height = target_size
+        scale = max(target_width / image.width, target_height / image.height)
+        resized = image.resize((int(image.width * scale), int(image.height * scale)), Image.Resampling.LANCZOS)
+        left = max(0, (resized.width - target_width) // 2)
+        top = max(0, (resized.height - target_height) // 2)
+        return resized.crop((left, top, left + target_width, top + target_height))
 
     def _get_vertex_aspect_ratio(self, aspect_ratio: str) -> str:
         ratio_map = {

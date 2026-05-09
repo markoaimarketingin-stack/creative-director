@@ -27,6 +27,8 @@ CREATIVE_SYSTEM_PROMPT = (
 
 
 def brand_context(payload: CreativeInput) -> str:
+    brand_colors = ", ".join(payload.brand_colors) if payload.brand_colors else "Not specified"
+    logo_hint = payload.logo_image if payload.logo_image else "Not provided"
     return (
         f"Brand: {payload.brand_name}\n"
         f"Product: {payload.product_description}\n"
@@ -36,7 +38,9 @@ def brand_context(payload: CreativeInput) -> str:
         f"Tone: {payload.tone}\n"
         f"Key benefits: {', '.join(payload.key_benefits)}\n"
         f"Competitors: {', '.join(payload.competitors) if payload.competitors else 'None listed'}\n"
-        f"Visual style: {payload.visual_style or 'Not specified'}"
+        f"Visual style: {payload.visual_style or 'Not specified'}\n"
+        f"Brand colors (must prioritize): {brand_colors}\n"
+        f"Logo reference: {logo_hint}"
     )
 
 
@@ -150,6 +154,10 @@ def visual_concept_prompt(
         f"Prefer these aspect ratios for {payload.platform.value}: {aspect_ratios}.\n"
         "Each concept must contain: `hook_text`, `angle_name`, `scene_description`, `camera_angle`, "
         "`background_setting`, `color_palette`, `mood`, `style_reference`, `aspect_ratio`, `media_type`.\n"
+        "Brand consistency rules:\n"
+        "- If brand colors are provided, color_palette must use those exact hex values as the primary palette.\n"
+        "- Do not introduce unrelated dominant colors when brand colors are provided.\n"
+        "- If logo reference is provided, compose negative space and focal hierarchy suitable for logo presence.\n"
         "\nCRITICAL - ZERO META-COMPOSITION RULE:\n"
         "DO NOT mention: laptops, monitors, screens, tablets, phones, people, hands, users, viewers, audience.\n"
         "ONLY describe: the product/interface/outcome directly.\n\n"
@@ -202,6 +210,115 @@ def nanobanana_prompt(
     )
 
 
+def premium_nanobanana_prompt(
+    payload: CreativeInput,
+    concept: VisualConceptDraft | VisualConcept,
+    ad_copy: AdCopy | None = None,
+) -> str:
+    headline = (ad_copy.headline if ad_copy else "Work Faster")[:40]
+    body = (ad_copy.primary_text if ad_copy else "Built for modern teams")[:80]
+    cta = (ad_copy.cta if ad_copy else "Start Free")[:18]
+    brand_palette = ", ".join(payload.brand_colors) if payload.brand_colors else ", ".join(concept.color_palette)
+    logo_rule = (
+        "Include the provided logo as a clean brand mark; keep proportions intact and placement natural."
+        if payload.logo_image
+        else "No external logo reference provided."
+    )
+
+    return f"""
+Create a premium high-converting commercial advertisement for {payload.brand_name}.
+
+STYLE:
+Modern Meta/Facebook/Instagram sponsored ad.
+Premium startup aesthetic.
+Apple-level product composition.
+Clean luxury commercial design.
+
+PRODUCT:
+{concept.scene_description}
+
+BACKGROUND:
+{concept.background_setting}
+
+MOOD:
+{concept.mood}
+
+CAMERA:
+{concept.camera_angle}
+
+VISUAL STYLE:
+{concept.style_reference}
+
+ASPECT RATIO:
+{concept.aspect_ratio}
+
+COLOR PALETTE:
+{brand_palette}
+
+TARGET AUDIENCE:
+{payload.target_audience}
+
+OBJECTIVE:
+{payload.objective.value}
+
+COMPOSITION RULES:
+- Product/interface is the main hero
+- Product occupies 60-70% of frame
+- Strong visual hierarchy
+- Clean negative spacing
+- Balanced modern layout
+- Premium studio lighting
+- Soft shadows
+- High contrast
+- Realistic reflections
+- Sharp focus
+- Commercial product photography
+- Conversion-focused composition
+- Strictly follow the provided brand colors as dominant tones
+
+TEXT LAYOUT:
+Render these exact text elements clearly and correctly.
+HEADLINE: "{headline}"
+BODY TEXT: "{body}"
+CTA BUTTON: "{cta}"
+
+Typography requirements:
+- modern sans-serif font
+- bold clean headline
+- perfect spelling
+- highly readable
+- premium ad typography
+- strong contrast
+- realistic CTA button
+- natural text placement
+- no distorted letters
+- no fake paragraphs
+
+Text positioning:
+- headline near top-left
+- body text below headline
+- CTA button near bottom-center
+
+IMPORTANT:
+Do NOT generate:
+- laptops
+- monitors
+- people
+- hands
+- office desks
+- nested screens
+- screenshots
+- fake UI text
+- random letters
+- clutter
+- watermarks
+
+{logo_rule}
+The advertisement itself fills the entire frame.
+The final result should look like a real Instagram sponsored ad and production-ready commercial creative.
+"""
+
+
 def huggingface_prompt(
     payload: CreativeInput,
     concept: VisualConceptDraft | VisualConcept,
@@ -227,6 +344,13 @@ def huggingface_prompt(
     headline = headline[:40]
     primary_text = primary_text[:60]
     cta = cta[:18]
+
+    brand_palette_line = ", ".join(payload.brand_colors) if payload.brand_colors else ", ".join(concept.color_palette)
+    logo_rule = (
+        "Use the provided logo reference as brand identity anchor; preserve logo proportions and avoid distortion."
+        if payload.logo_image
+        else "No external logo reference provided."
+    )
 
     return (f"""
 Create a premium commercial advertisement for {payload.brand_name}.
@@ -266,7 +390,7 @@ Style:
 {concept.style_reference}
 
 Color palette:
-{', '.join(concept.color_palette)}
+{brand_palette_line}
 
 Platform:
 {payload.platform.value}
@@ -306,6 +430,7 @@ Use:
 - minimal clutter
 - high contrast
 - modern layout design
+- strict adherence to provided brand color hex values
 
 ════════════════════════════
 PRODUCT RULES
@@ -361,6 +486,7 @@ Keep text minimal and perfectly readable.
 Do NOT generate extra paragraphs.
 Do NOT generate fake UI text.
 Do NOT generate random letters.
+{logo_rule}
 
 ════════════════════════════
 NEGATIVE PROMPT

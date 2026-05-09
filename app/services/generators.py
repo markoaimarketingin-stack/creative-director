@@ -29,6 +29,7 @@ from app.services.prompts import (
     hook_prompt,
     huggingface_prompt,
     nanobanana_prompt,
+    premium_nanobanana_prompt,
     visual_concept_prompt,
 )
 
@@ -146,7 +147,7 @@ class VisualConceptGenerator:
                     style_reference=draft.style_reference,
                     aspect_ratio=draft.aspect_ratio,
                     media_type=draft.media_type,
-                    generation_prompt=huggingface_prompt(payload, draft, selected_copy),
+                    generation_prompt=premium_nanobanana_prompt(payload, draft, selected_copy),
                 )
             )
         return concepts
