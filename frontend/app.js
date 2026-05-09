@@ -71,6 +71,7 @@ function totalSelectedReferences() {
 function refreshSampleHint(message, bad = false) {
   if (message) {
     setSampleHint(message, bad);
+    updateReferenceSimilarityVisibility();
     return;
   }
   const total = totalSelectedReferences();
