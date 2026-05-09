@@ -81,10 +81,17 @@ class CreativeDirectorEngine:
 
         generated_creatives = []
         has_reference_images = bool(payload.sample_images)
+        vertex_client_obj = self._vertex_client
+        vertex_provider = (getattr(vertex_client_obj, "_provider", "imagen") if vertex_client_obj else "imagen")
+        vertex_runtime_client = (
+            getattr(vertex_client_obj, "_gemini_client", None)
+            if vertex_provider == "gemini_image"
+            else getattr(vertex_client_obj, "_client", None)
+        )
         vertex_ready = bool(
-            self._vertex_client
-            and getattr(self._vertex_client, "_project_id", None)
-            and self._vertex_client._client is not None
+            vertex_client_obj
+            and getattr(vertex_client_obj, "_project_id", None)
+            and vertex_runtime_client is not None
         )
         hf_ready = bool(self._hf_client and getattr(self._hf_client, "_api_key", None))
 

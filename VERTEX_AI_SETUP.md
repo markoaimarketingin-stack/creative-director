@@ -120,7 +120,14 @@ Your `.env` already has the correct setup:
 ```
 VERTEX_AI_PROJECT_ID=1043834745507
 VERTEX_AI_LOCATION=us-central1
+VERTEX_AI_PROVIDER=imagen
 VERTEX_AI_IMAGE_MODEL=imagen-3.0-generate-001
 ```
 
 Just add the `GOOGLE_APPLICATION_CREDENTIALS` environment variable!
+
+To use Nano Banana on Vertex AI, switch to:
+```
+VERTEX_AI_PROVIDER=gemini_image
+VERTEX_AI_IMAGE_MODEL=gemini-2.5-flash-image
+```

@@ -14,6 +14,7 @@ from app.models import CreativeStatus, GeneratedCreative, Platform, VisualConcep
 ImageGenerationModel = None
 VertexImage = None
 aiplatform = None
+genai = None
 VERTEX_AI_AVAILABLE = False
 VERTEX_AI_IMPORT_ERROR = None
 
@@ -35,39 +36,76 @@ except ImportError as e:
         VERTEX_AI_IMPORT_ERROR = f"{e}; fallback failed: {e2}"
         print(f"[VERTEX_AI] Import failed: {VERTEX_AI_IMPORT_ERROR}")
 
+try:
+    from google import genai
+except ImportError:
+    genai = None
+
 
 class VertexAIClient:
     def __init__(self, settings: Settings) -> None:
         self._project_id = settings.vertex_ai_project_id
         self._location = settings.vertex_ai_location
+        self._provider = (settings.vertex_ai_provider or "imagen").strip().lower()
         self._model_name = settings.vertex_ai_image_model
         self._edit_model_name = "imagen-3.0-capability-001"
         self._client = None
         self._edit_client = None
+        self._gemini_client = None
 
-        if self._project_id and VERTEX_AI_AVAILABLE:
-            try:
-                print(f"[VERTEX_AI] Initializing with project={self._project_id}, location={self._location}")
-                aiplatform.init(project=self._project_id, location=self._location)
-                self._client = ImageGenerationModel.from_pretrained(self._model_name)
-                try:
-                    self._edit_client = ImageGenerationModel.from_pretrained(self._edit_model_name)
-                    print(f"[VERTEX_AI] Initialized edit model: {self._edit_model_name}")
-                except Exception as edit_exc:
-                    print(f"[VERTEX_AI] Edit model init failed ({self._edit_model_name}): {edit_exc}")
-                    self._edit_client = None
-                print("[VERTEX_AI] Initialized Vertex AI Imagen client")
-            except Exception as e:
-                print(f"[VERTEX_AI] Failed to initialize: {type(e).__name__}: {e}")
-                self._client = None
-                self._edit_client = None
-        else:
+        if not self._project_id:
             print(
                 "[VERTEX_AI] Skipped - "
-                f"VERTEX_AI_AVAILABLE={VERTEX_AI_AVAILABLE}, "
                 f"project_id={self._project_id}, "
                 f"import_error={VERTEX_AI_IMPORT_ERROR}"
             )
+            return
+
+        if self._provider == "gemini_image":
+            self._init_gemini_image_client()
+            return
+
+        self._init_imagen_client()
+
+    def _init_imagen_client(self) -> None:
+        if not VERTEX_AI_AVAILABLE:
+            print(
+                "[VERTEX_AI] Imagen unavailable - "
+                f"VERTEX_AI_AVAILABLE={VERTEX_AI_AVAILABLE}, "
+                f"import_error={VERTEX_AI_IMPORT_ERROR}"
+            )
+            return
+        try:
+            print(f"[VERTEX_AI] Initializing Imagen with project={self._project_id}, location={self._location}")
+            aiplatform.init(project=self._project_id, location=self._location)
+            self._client = ImageGenerationModel.from_pretrained(self._model_name)
+            try:
+                self._edit_client = ImageGenerationModel.from_pretrained(self._edit_model_name)
+                print(f"[VERTEX_AI] Initialized edit model: {self._edit_model_name}")
+            except Exception as edit_exc:
+                print(f"[VERTEX_AI] Edit model init failed ({self._edit_model_name}): {edit_exc}")
+                self._edit_client = None
+            print("[VERTEX_AI] Initialized Vertex AI Imagen client")
+        except Exception as e:
+            print(f"[VERTEX_AI] Failed to initialize Imagen client: {type(e).__name__}: {e}")
+            self._client = None
+            self._edit_client = None
+
+    def _init_gemini_image_client(self) -> None:
+        if genai is None:
+            print("[VERTEX_AI] Gemini image mode requested but `google-genai` is not installed.")
+            return
+        try:
+            print(f"[VERTEX_AI] Initializing Gemini Image with project={self._project_id}, location={self._location}")
+            self._gemini_client = genai.Client(
+                vertexai=True,
+                project=self._project_id,
+                location=self._location,
+            )
+            print("[VERTEX_AI] Initialized Vertex AI Gemini image client")
+        except Exception as e:
+            print(f"[VERTEX_AI] Failed to initialize Gemini image client: {type(e).__name__}: {e}")
+            self._gemini_client = None
 
     async def generate_batch(
         self,
@@ -89,7 +127,8 @@ class VertexAIClient:
         platform: Platform,
         sample_images: list[str] | None = None,
     ) -> GeneratedCreative:
-        if not self._project_id or not self._client:
+        client_ready = bool(self._gemini_client) if self._provider == "gemini_image" else bool(self._client)
+        if not self._project_id or not client_ready:
             return GeneratedCreative(
                 concept_id=concept.concept_id,
                 provider="vertex-ai",
@@ -97,12 +136,15 @@ class VertexAIClient:
                 prompt=concept.generation_prompt,
                 error=(
                     "Vertex AI unavailable. Check VERTEX_AI_PROJECT_ID, credentials, "
-                    "and google-cloud-aiplatform/vertexai package compatibility."
+                    "selected provider setup, and package compatibility."
                 ),
             )
 
         try:
-            image_urls = await self._call_imagen_api(concept, sample_images=sample_images)
+            if self._provider == "gemini_image":
+                image_urls = await self._call_gemini_image_api(concept, sample_images=sample_images)
+            else:
+                image_urls = await self._call_imagen_api(concept, sample_images=sample_images)
             if image_urls:
                 return GeneratedCreative(
                     concept_id=concept.concept_id,
@@ -129,6 +171,19 @@ class VertexAIClient:
                 prompt=concept.generation_prompt,
                 error=str(e),
             )
+
+    async def _call_gemini_image_api(self, concept: VisualConcept, sample_images: list[str] | None = None) -> list[str]:
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, self._generate_gemini_image_sync, concept, sample_images)
+        image_bytes_list = self._extract_gemini_image_bytes(response)
+        urls: list[str] = []
+        for image_bytes in image_bytes_list:
+            image_path = self._save_image_locally(image_bytes)
+            if image_path:
+                urls.append(f"/output/{image_path}")
+        if not urls:
+            print("[VERTEX_AI] Gemini image response did not include usable image bytes")
+        return urls
 
     async def _call_imagen_api(self, concept: VisualConcept, sample_images: list[str] | None = None) -> list[str]:
         loop = asyncio.get_event_loop()
@@ -182,6 +237,52 @@ class VertexAIClient:
             elif base_image is not None and self._edit_client is None:
                 print("[VERTEX_AI] Edit model unavailable; using text-only generation fallback")
         return self._client.generate_images(**kwargs)
+
+    def _generate_gemini_image_sync(self, concept: VisualConcept, sample_images: list[str] | None = None):
+        contents: list = [concept.generation_prompt]
+        for source in sample_images or []:
+            try:
+                image_bytes = self._read_reference_source(source)
+                normalized = self._normalize_image_bytes_for_vertex(image_bytes)
+                contents.append(
+                    {
+                        "inline_data": {
+                            "mime_type": "image/png",
+                            "data": base64.b64encode(normalized).decode("utf-8"),
+                        }
+                    }
+                )
+            except Exception as exc:
+                print(f"[VERTEX_AI] Failed to include sample image for Gemini image mode: {exc}")
+        return self._gemini_client.models.generate_content(
+            model=self._model_name,
+            contents=contents,
+        )
+
+    def _extract_gemini_image_bytes(self, response) -> list[bytes]:
+        extracted: list[bytes] = []
+        for candidate in self._extract_images(response):
+            image_bytes = self._extract_image_bytes(candidate)
+            if image_bytes:
+                extracted.append(image_bytes)
+        if extracted:
+            return extracted
+
+        candidates = getattr(response, "candidates", None) or []
+        for candidate in candidates:
+            content = getattr(candidate, "content", None)
+            parts = getattr(content, "parts", None) or []
+            for part in parts:
+                inline = getattr(part, "inline_data", None)
+                data = getattr(inline, "data", None)
+                if isinstance(data, bytes) and data:
+                    extracted.append(data)
+                elif isinstance(data, str) and data:
+                    try:
+                        extracted.append(base64.b64decode(data))
+                    except (binascii.Error, ValueError):
+                        continue
+        return extracted
 
     def _build_base_image(self, sample_images: list[str]):
         if not sample_images:
@@ -261,7 +362,8 @@ class VertexAIClient:
 
             timestamp = datetime.now().isoformat().replace(":", "-")
             content_hash = hashlib.md5(image_data).hexdigest()[:8]
-            filename = f"imagen_{timestamp}_{content_hash}.png"
+            provider_prefix = "gemini" if self._provider == "gemini_image" else "imagen"
+            filename = f"{provider_prefix}_{timestamp}_{content_hash}.png"
             filepath = output_dir / filename
             filepath.write_bytes(image_data)
             return f"vertex_ai_images/{filename}"
