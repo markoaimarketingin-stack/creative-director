@@ -6,6 +6,71 @@ let API_BASE_URL = (
   ? window.__APP_CONFIG__.BACKEND_URL.trim().replace(/\/+$/, "")
   : "";
 
+// --- JWT Decoder Helper ---
+function decodeJwt(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    console.error("[Auth] Failed to decode JWT:", e);
+    return null;
+  }
+}
+
+// --- postMessage Token Receiver ---
+const SUPERVISOR_ORIGIN = "https://marko-supervisor.vercel.app";
+let accessToken = sessionStorage.getItem("markoIframeAuthToken") || "";
+
+window.addEventListener("message", (event) => {
+  // Validate origin (allow supervisor domain, or own origin during local development)
+  const isDev = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  if (event.origin !== SUPERVISOR_ORIGIN && !(isDev && event.origin === window.location.origin)) return;
+
+  if (event.data?.type === "MARKO_AUTH_TOKEN" && event.data?.token) {
+    const token = event.data.token;
+    accessToken = token;
+    sessionStorage.setItem("markoIframeAuthToken", token);
+    console.log("[Auth] Token successfully received and updated via postMessage");
+    
+    // Decode token and set user info
+    const payload = decodeJwt(token);
+    if (payload) {
+      const email = payload.sub || payload.email || "user@marko.ai";
+      const name = payload.username || email.split('@')[0];
+      
+      const prevEmail = localStorage.getItem("auth_email");
+      localStorage.setItem("auth_email", email);
+      localStorage.setItem("auth_name", name);
+      localStorage.setItem("is_guest", "false");
+      
+      const overlay = document.getElementById("login-overlay");
+      if (overlay) {
+        overlay.style.display = "none";
+      }
+
+      // Update UI elements
+      const nameEl = document.getElementById("user-name-element");
+      const emailEl = document.getElementById("user-email-element");
+      const avatarEl = document.getElementById("user-avatar-element");
+      if (nameEl) nameEl.textContent = name;
+      if (emailEl) emailEl.textContent = email;
+      if (avatarEl) {
+        const displayLetter = name.charAt(0).toUpperCase();
+        avatarEl.textContent = displayLetter;
+      }
+
+      // Reload to pull new session data if the user changed
+      if (prevEmail !== email) {
+        window.location.reload();
+      }
+    }
+  }
+});
+
 // --- Auth & DB Segregation Interceptor ---
 const originalFetch = window.fetch;
 window.fetch = async function () {
@@ -17,8 +82,10 @@ window.fetch = async function () {
   const isGuest = localStorage.getItem("is_guest");
   const customProvider = localStorage.getItem("custom_provider") || "default";
   const customApiKey = localStorage.getItem("custom_api_key");
+  const token = sessionStorage.getItem("markoIframeAuthToken") || accessToken;
   
   if (config.headers instanceof Headers) {
+    if (token) config.headers.append("Authorization", `Bearer ${token}`);
     if (authEmail) config.headers.append("X-Client-Email", authEmail);
     if (isGuest) config.headers.append("X-Is-Guest", isGuest);
     if (customProvider !== "default" && customApiKey && customApiKey.trim()) {
@@ -26,6 +93,7 @@ window.fetch = async function () {
       config.headers.append(headerName, customApiKey.trim());
     }
   } else {
+    if (token) config.headers["Authorization"] = `Bearer ${token}`;
     if (authEmail) config.headers["X-Client-Email"] = authEmail;
     if (isGuest) config.headers["X-Is-Guest"] = isGuest;
     if (customProvider !== "default" && customApiKey && customApiKey.trim()) {

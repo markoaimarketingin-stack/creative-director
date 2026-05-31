@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.auth import get_current_user
 from pydantic import BaseModel
 import httpx
 import json
@@ -84,7 +85,10 @@ For copy: include fields: headline, primary_text, cta, hook_text, angle_name, to
 
 
 @router.post("/suggestions", response_model=SuggestionsResponse)
-async def get_suggestions(request: SuggestionRequest):
+async def get_suggestions(
+    request: SuggestionRequest,
+    current_user: dict = Depends(get_current_user)
+):
     settings = get_settings()
 
     campaign = request.campaign
@@ -150,7 +154,10 @@ CONCEPTS ({len(concepts)}):
 
 
 @router.post("/execute-suggestion", response_model=ExecuteResponse)
-async def execute_suggestion(request: ExecuteRequest):
+async def execute_suggestion(
+    request: ExecuteRequest,
+    current_user: dict = Depends(get_current_user)
+):
     settings = get_settings()
 
     suggestion = request.suggestion

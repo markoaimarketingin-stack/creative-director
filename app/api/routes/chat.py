@@ -1,10 +1,14 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter
+# pyrefly: ignore [missing-import]
+from fastapi import APIRouter, Header, Request, Depends
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel
+# pyrefly: ignore [missing-import]
 import httpx
 from app.core.config import get_settings
+from app.auth import get_current_user
 
 router = APIRouter()
 log = logging.getLogger("chat")
@@ -107,7 +111,6 @@ class ChatResponse(BaseModel):
     session_id: str | None = None
 
 
-from fastapi import APIRouter, Header, Request, Depends
 
 SPECIALIST_SYSTEM_PROMPTS = {
     "reels": (
@@ -139,6 +142,7 @@ class ReelsDirectorResponse(BaseModel):
 @router.post("/chat-assistant", response_model=ChatResponse)
 async def chat_assistant(
     request: ChatRequest,
+    current_user: dict = Depends(get_current_user),
     x_client_email: str | None = Header(None),
     x_is_guest: str | None = Header(None)
 ):
@@ -278,9 +282,10 @@ Rules:
 
     # --- Return reply or friendly error ---
     if reply:
-        is_guest_bool = x_is_guest == "true"
-        chat_db.save_message(session_id, "user", request.message, client_email=x_client_email, is_guest=is_guest_bool)
-        chat_db.save_message(session_id, "assistant", reply, client_email=x_client_email, is_guest=is_guest_bool)
+        email = current_user.get("username") or x_client_email
+        is_guest_bool = x_is_guest == "true" or (current_user and current_user.get("username") == "guest@marko.ai")
+        chat_db.save_message(session_id, "user", request.message, client_email=email, is_guest=is_guest_bool)
+        chat_db.save_message(session_id, "assistant", reply, client_email=email, is_guest=is_guest_bool)
         new_history = history + [
             {"role": "user", "content": request.message},
             {"role": "assistant", "content": reply},
@@ -303,6 +308,7 @@ Rules:
 async def reels_director(
     request: ReelsDirectorRequest,
     http_request: Request,
+    current_user: dict = Depends(get_current_user),
     x_client_email: str | None = Header(None),
     x_is_guest: str | None = Header(None),
 ):
@@ -352,9 +358,10 @@ async def reels_director(
         return ReelsDirectorResponse(reply=fallback_reply, analysis=None, context=context, session_id=session_id)
 
     reply = "Instagram Reels analysis is ready: viral patterns, competitor wins, script direction, and retention scoring."
-    is_guest_bool = x_is_guest == "true"
-    chat_db.save_message(session_id, "user", request.message, client_email=x_client_email, is_guest=is_guest_bool)
-    chat_db.save_message(session_id, "assistant", reply, client_email=x_client_email, is_guest=is_guest_bool)
+    email = current_user.get("username") or x_client_email
+    is_guest_bool = x_is_guest == "true" or (current_user and current_user.get("username") == "guest@marko.ai")
+    chat_db.save_message(session_id, "user", request.message, client_email=email, is_guest=is_guest_bool)
+    chat_db.save_message(session_id, "assistant", reply, client_email=email, is_guest=is_guest_bool)
     new_history = history + [
         {"role": "user", "content": request.message},
         {"role": "assistant", "content": reply},
@@ -365,27 +372,32 @@ async def reels_director(
 @router.get("/chat-history/{session_id}")
 async def get_chat_history(
     session_id: str,
+    current_user: dict = Depends(get_current_user),
     x_client_email: str | None = Header(None)
 ):
     settings = get_settings()
     from app.services.database import ChatDatabase
     chat_db = ChatDatabase(settings)
-    history = chat_db.get_history(session_id, client_email=x_client_email)
+    email = current_user.get("username") or x_client_email
+    history = chat_db.get_history(session_id, client_email=email)
     return {"session_id": session_id, "history": history}
 
 @router.get("/chat-sessions")
 async def get_chat_sessions(
+    current_user: dict = Depends(get_current_user),
     x_client_email: str | None = Header(None)
 ):
     settings = get_settings()
     from app.services.database import ChatDatabase
     chat_db = ChatDatabase(settings)
-    sessions = chat_db.get_sessions(client_email=x_client_email)
+    email = current_user.get("username") or x_client_email
+    sessions = chat_db.get_sessions(client_email=email)
     return {"sessions": sessions}
 
 @router.get("/session-data/{session_id}")
 async def get_session_data(
     session_id: str,
+    current_user: dict = Depends(get_current_user),
     x_client_email: str | None = Header(None)
 ):
     """Get all session data: chat history, knowledge base, and execution history."""
@@ -393,7 +405,8 @@ async def get_session_data(
     from app.services.database import ChatDatabase
     chat_db = ChatDatabase(settings)
     
-    chat_history = chat_db.get_history(session_id, client_email=x_client_email)
+    email = current_user.get("username") or x_client_email
+    chat_history = chat_db.get_history(session_id, client_email=email)
     knowledge_base = chat_db.get_knowledge_base(session_id)
     execution_history = chat_db.get_execution_history(session_id)
     
@@ -408,6 +421,7 @@ async def get_session_data(
 async def save_knowledge_base(
     session_id: str,
     kb_item: dict,
+    current_user: dict = Depends(get_current_user),
     x_is_guest: str | None = Header(None)
 ):
     """Save a knowledge base item to the session."""
@@ -415,7 +429,7 @@ async def save_knowledge_base(
     from app.services.database import ChatDatabase
     chat_db = ChatDatabase(settings)
     
-    is_guest_bool = x_is_guest == "true"
+    is_guest_bool = x_is_guest == "true" or (current_user and current_user.get("username") == "guest@marko.ai")
     kb_id = chat_db.save_knowledge_base_item(
         session_id=session_id,
         file_name=kb_item.get("file_name", "unknown"),
@@ -429,7 +443,10 @@ async def save_knowledge_base(
     return {"success": kb_id is not None, "kb_id": kb_id, "session_id": session_id}
 
 @router.get("/knowledge-base/{session_id}")
-async def get_knowledge_base(session_id: str):
+async def get_knowledge_base(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
     """Retrieve all knowledge base items for a session."""
     settings = get_settings()
     from app.services.database import ChatDatabase
@@ -442,6 +459,7 @@ async def get_knowledge_base(session_id: str):
 async def save_execution_history(
     session_id: str,
     execution: dict,
+    current_user: dict = Depends(get_current_user),
     x_is_guest: str | None = Header(None)
 ):
     """Save execution/generation history."""
@@ -452,7 +470,7 @@ async def save_execution_history(
     chat_db = ChatDatabase(settings)
     start_time = time.time()
     
-    is_guest_bool = x_is_guest == "true"
+    is_guest_bool = x_is_guest == "true" or (current_user and current_user.get("username") == "guest@marko.ai")
     execution_id = chat_db.save_execution_history(
         session_id=session_id,
         campaign_name=execution.get("campaign_name", "unknown"),
@@ -468,7 +486,10 @@ async def save_execution_history(
     return {"success": execution_id is not None, "execution_id": execution_id, "session_id": session_id}
 
 @router.get("/execution-history/{session_id}")
-async def get_execution_history(session_id: str):
+async def get_execution_history(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
     """Retrieve execution history for a session."""
     settings = get_settings()
     from app.services.database import ChatDatabase
@@ -553,6 +574,7 @@ class ChatGenerateResponse(BaseModel):
 @router.post("/chat-generate", response_model=ChatGenerateResponse)
 async def chat_generate(
     request: ChatGenerateRequest,
+    current_user: dict = Depends(get_current_user),
     x_client_email: str | None = Header(None),
     x_is_guest: str | None = Header(None)
 ):
@@ -750,9 +772,10 @@ async def chat_generate(
             merged[key] = value
 
     # Save chat messages
-    is_guest_bool = x_is_guest == "true"
-    chat_db.save_message(session_id, "user", request.message, client_email=x_client_email, is_guest=is_guest_bool)
-    chat_db.save_message(session_id, "assistant", reply, client_email=x_client_email, is_guest=is_guest_bool)
+    email = current_user.get("username") or x_client_email
+    is_guest_bool = x_is_guest == "true" or (current_user and current_user.get("username") == "guest@marko.ai")
+    chat_db.save_message(session_id, "user", request.message, client_email=email, is_guest=is_guest_bool)
+    chat_db.save_message(session_id, "assistant", reply, client_email=email, is_guest=is_guest_bool)
 
     new_history = history + [
         {"role": "user", "content": request.message},

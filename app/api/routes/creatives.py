@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 
 from app.api.auth import require_api_auth
+from app.auth import get_current_user
 from app.models import (
     CampaignPackage, 
     CreativeInput, 
@@ -32,14 +33,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, U
 @router.post("/generate-creatives", response_model=CampaignPackage)
 async def generate_creatives(
     payload: CreativeInput,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
     x_client_email: str | None = Header(None),
     x_is_guest: str | None = Header(None),
 ) -> CampaignPackage:
     try:
-        is_guest_bool = x_is_guest == "true"
-        return await engine.generate_campaign(payload, client_email=x_client_email, is_guest=is_guest_bool)
+        email = current_user.get("username") or x_client_email
+        is_guest_bool = x_is_guest == "true" or (current_user and current_user.get("username") == "guest@marko.ai")
+        return await engine.generate_campaign(payload, client_email=email, is_guest=is_guest_bool)
     except ValueError as exc:
         print(f"[ERROR] ValueError: {exc}")  # Add
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -56,7 +58,7 @@ async def generate_creatives(
 @router.post("/generate-concepts", response_model=ConceptGenerationResponse)
 async def api_generate_concepts(
     payload: CreativeInput,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
 ) -> ConceptGenerationResponse:
     try:
@@ -71,7 +73,7 @@ async def api_generate_concepts(
 @router.post("/generate-image", response_model=GeneratedCreative)
 async def api_generate_image(
     req: ImageGenerationRequest,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
 ) -> GeneratedCreative:
     try:
@@ -86,13 +88,14 @@ async def api_generate_image(
 @router.post("/score-and-package", response_model=CampaignPackage)
 async def api_score_and_package(
     req: ScoringRequest,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
     x_client_email: str | None = Header(None),
     x_is_guest: str | None = Header(None),
 ) -> CampaignPackage:
     try:
-        is_guest_bool = x_is_guest == "true"
+        email = current_user.get("username") or x_client_email
+        is_guest_bool = x_is_guest == "true" or (current_user and current_user.get("username") == "guest@marko.ai")
         package = await engine.score_and_package(
             payload=req.payload,
             hooks=req.hooks,
@@ -100,7 +103,7 @@ async def api_score_and_package(
             ad_copies=req.ad_copies,
             visual_concepts=req.visual_concepts,
             generated_creatives=req.generated_creatives,
-            client_email=x_client_email,
+            client_email=email,
             is_guest=is_guest_bool,
         )
         # Automatically add generated final images to the Knowledge Base
@@ -136,7 +139,7 @@ async def api_score_and_package(
 async def get_top_creatives(
     limit: int | None = Query(default=None, ge=1, le=500),
     platform: Platform | None = None,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
 ) -> TopCreativesResponse:
     return engine.get_top_creatives(limit=limit, platform=platform)
@@ -146,10 +149,12 @@ async def get_top_creatives(
 async def get_campaign_history(
     limit: int | None = Query(default=None, ge=1, le=500),
     platform: Platform | None = None,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
+    x_client_email: str | None = Header(None),
 ) -> CampaignHistoryResponse:
-    return engine.get_campaign_history(limit=limit, platform=platform)
+    email = current_user.get("username") or x_client_email
+    return engine.get_campaign_history(limit=limit, platform=platform, client_email=email)
 
 
 @router.post("/knowledge-base/images")
@@ -157,7 +162,7 @@ async def upload_kb_image(
     file: UploadFile = File(...),
     title: str | None = Form(None),
     tags: str | None = Form(None),
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
 ) -> dict:
     """Upload an image to the knowledge base."""
@@ -172,7 +177,7 @@ async def upload_kb_image(
 
 @router.get("/knowledge-base/images")
 async def list_kb_images(
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
 ):
     return {"items": engine._storage.list_kb_images()}
@@ -180,7 +185,7 @@ async def list_kb_images(
 @router.delete("/knowledge-base/images/{image_id}")
 async def delete_kb_image(
     image_id: str,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
 ):
     success = engine._storage.delete_kb_image(image_id)

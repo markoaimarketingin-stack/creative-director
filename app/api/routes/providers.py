@@ -1,13 +1,14 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 import httpx
 
 from app.core.config import get_settings
+from app.auth import get_current_user
 
 router = APIRouter(tags=["providers"])
 
 
 @router.get("/provider-health")
-async def provider_health() -> dict:
+async def provider_health(current_user: dict = Depends(get_current_user)) -> dict:
     settings = get_settings()
     health: dict[str, dict[str, str | bool]] = {
         "groq": {"configured": bool(settings.groq_api_key), "ok": False, "detail": "Not checked"},

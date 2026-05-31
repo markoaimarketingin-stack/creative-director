@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     api_auth_enabled: bool = False
     app_api_key: str | None = None
     google_client_id: str | None = None
+    jwt_secret: str = "88f9a2e3eb8c39faee4d84fde948a04b1265893d56b4cf848a6de6ef062b1b11"
+    jwt_algorithm: str = "HS256"
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

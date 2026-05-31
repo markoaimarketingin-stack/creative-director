@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.auth import require_api_auth
+from app.auth import get_current_user
 from app.models import (
     InstagramAnalyzeCompetitorRequest,
     InstagramAnalyzeReelRequest,
@@ -35,7 +36,7 @@ def get_ingestion_service(container: ServiceContainer = Depends(get_container)) 
 @router.post("/instagram/analyze-reel", response_model=InstagramReelsResponse)
 async def analyze_reel(
     payload: InstagramAnalyzeReelRequest,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: InstagramDirectorEngine = Depends(get_instagram_engine),
 ) -> InstagramReelsResponse:
     return await engine.analyze_reel(payload)
@@ -44,7 +45,7 @@ async def analyze_reel(
 @router.post("/instagram/analyze-competitor", response_model=InstagramReelsResponse)
 async def analyze_competitor(
     payload: InstagramAnalyzeCompetitorRequest,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: InstagramDirectorEngine = Depends(get_instagram_engine),
 ) -> InstagramReelsResponse:
     return await engine.analyze_competitor(payload)
@@ -53,7 +54,7 @@ async def analyze_competitor(
 @router.post("/instagram/detect-trends", response_model=InstagramReelsResponse)
 async def detect_trends(
     payload: InstagramDetectTrendsRequest,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: InstagramDirectorEngine = Depends(get_instagram_engine),
 ) -> InstagramReelsResponse:
     return await engine.detect_trends(payload)
@@ -62,7 +63,7 @@ async def detect_trends(
 @router.post("/instagram/generate-script", response_model=InstagramReelsResponse)
 async def generate_script(
     payload: InstagramGenerateScriptRequest,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: InstagramDirectorEngine = Depends(get_instagram_engine),
 ) -> InstagramReelsResponse:
     return await engine.generate_script(payload)
@@ -71,7 +72,7 @@ async def generate_script(
 @router.post("/instagram/direct-reel", response_model=InstagramReelsResponse)
 async def direct_reel(
     payload: InstagramDirectReelRequest,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: InstagramDirectorEngine = Depends(get_instagram_engine),
 ) -> InstagramReelsResponse:
     return await engine.direct_reel(payload)
@@ -80,7 +81,7 @@ async def direct_reel(
 @router.post("/instagram/score-reel", response_model=InstagramReelsResponse)
 async def score_reel(
     payload: InstagramScoreReelRequest,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     engine: InstagramDirectorEngine = Depends(get_instagram_engine),
 ) -> InstagramReelsResponse:
     return await engine.score_reel(payload)
@@ -89,7 +90,7 @@ async def score_reel(
 @router.post("/instagram/ingest-reels", response_model=InstagramIngestionJob)
 async def ingest_reels(
     payload: InstagramIngestionRequest,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     service: InstagramIngestionService = Depends(get_ingestion_service),
 ) -> InstagramIngestionJob:
     return await service.submit(payload)
@@ -98,7 +99,7 @@ async def ingest_reels(
 @router.get("/instagram/ingestion-jobs/{job_id}", response_model=InstagramIngestionJob)
 async def get_ingestion_job(
     job_id: str,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     service: InstagramIngestionService = Depends(get_ingestion_service),
 ) -> InstagramIngestionJob:
     try:
@@ -110,7 +111,7 @@ async def get_ingestion_job(
 @router.get("/instagram/ingestion-jobs/{job_id}/result", response_model=InstagramIngestionResult)
 async def get_ingestion_result(
     job_id: str,
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     service: InstagramIngestionService = Depends(get_ingestion_service),
 ) -> InstagramIngestionResult:
     try:
@@ -121,7 +122,7 @@ async def get_ingestion_result(
 
 @router.get("/instagram/trend-history")
 async def get_trend_history(
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     container: ServiceContainer = Depends(get_container),
 ):
     storage = container.engine._storage
@@ -132,7 +133,7 @@ async def get_trend_history(
 
 @router.get("/instagram/competitor-benchmarks")
 async def get_competitor_benchmarks(
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     container: ServiceContainer = Depends(get_container),
 ):
     storage = container.engine._storage
@@ -143,7 +144,7 @@ async def get_competitor_benchmarks(
 
 @router.get("/instagram/reel-library")
 async def get_reel_library(
-    _actor: str = Depends(require_api_auth),
+    current_user: dict = Depends(get_current_user),
     container: ServiceContainer = Depends(get_container),
 ):
     storage = container.engine._storage
