@@ -786,7 +786,34 @@ function toPublicAssetUrl(rawPath) {
   return `${API_BASE_URL}/output/${relative.replace(/^\/+/, "")}`;
 }
 
+function showLobby() {
+  const lobbyPanel = byId("agent-lobby");
+  if (lobbyPanel) lobbyPanel.classList.remove("hidden");
+  
+  const btnBack = byId("btn-back-to-lobby");
+  if (btnBack) btnBack.style.display = "none";
+  
+  if (supervisorPanel) supervisorPanel.classList.add("hidden");
+  if (heroCard) heroCard.classList.add("hidden");
+  if (loadingPanel) loadingPanel.classList.add("hidden");
+  if (resultsPanel) resultsPanel.classList.add("hidden");
+  if (historyPanel) historyPanel.classList.add("hidden");
+
+  if (supervisorNav) supervisorNav.classList.remove("active");
+  if (dashboardNav) dashboardNav.classList.remove("active");
+  document.querySelectorAll(".specialist").forEach((n) => n.classList.remove("active"));
+  if (navExecutionHistory) navExecutionHistory.classList.remove("active");
+
+  setStatus("Lobby ready. Select a workspace.");
+}
+
 function showSupervisor() {
+  const lobbyPanel = byId("agent-lobby");
+  if (lobbyPanel) lobbyPanel.classList.add("hidden");
+
+  const btnBack = byId("btn-back-to-lobby");
+  if (btnBack) btnBack.style.display = "inline-flex";
+
   if (supervisorPanel) supervisorPanel.classList.remove("hidden");
   if (heroCard) heroCard.classList.add("hidden");
   if (loadingPanel) loadingPanel.classList.add("hidden");
@@ -830,6 +857,12 @@ function hideFormError() {
 }
 
 function showDashboard() {
+  const lobbyPanel = byId("agent-lobby");
+  if (lobbyPanel) lobbyPanel.classList.add("hidden");
+
+  const btnBack = byId("btn-back-to-lobby");
+  if (btnBack) btnBack.style.display = "inline-flex";
+
   if (supervisorPanel) supervisorPanel.classList.add("hidden");
   if (supervisorNav) supervisorNav.classList.remove("active");
   if (loadingPanel) loadingPanel.classList.add("hidden");
@@ -857,6 +890,12 @@ function showDashboard() {
 }
 
 function showLoading() {
+  const lobbyPanel = byId("agent-lobby");
+  if (lobbyPanel) lobbyPanel.classList.add("hidden");
+
+  const btnBack = byId("btn-back-to-lobby");
+  if (btnBack) btnBack.style.display = "inline-flex";
+
   if (supervisorPanel) supervisorPanel.classList.add("hidden");
   if (heroCard) heroCard.classList.add("hidden");
   if (loadingPanel) loadingPanel.classList.remove("hidden");
@@ -865,6 +904,12 @@ function showLoading() {
 }
 
 function showResults() {
+  const lobbyPanel = byId("agent-lobby");
+  if (lobbyPanel) lobbyPanel.classList.add("hidden");
+
+  const btnBack = byId("btn-back-to-lobby");
+  if (btnBack) btnBack.style.display = "inline-flex";
+
   if (supervisorPanel) supervisorPanel.classList.add("hidden");
   if (heroCard) heroCard.classList.add("hidden");
   if (loadingPanel) loadingPanel.classList.add("hidden");
@@ -892,6 +937,12 @@ function showResults() {
 }
 
 function showHistory() {
+  const lobbyPanel = byId("agent-lobby");
+  if (lobbyPanel) lobbyPanel.classList.add("hidden");
+
+  const btnBack = byId("btn-back-to-lobby");
+  if (btnBack) btnBack.style.display = "inline-flex";
+
   if (supervisorPanel) supervisorPanel.classList.add("hidden");
   if (supervisorNav) supervisorNav.classList.remove("active");
   if (heroCard) heroCard.classList.add("hidden");
@@ -3605,9 +3656,240 @@ if (byId("f-copy")) byId("f-copy").value = "5";
 wireEvents();
 loadUiConfig();
 loadChatHistory();
-showSupervisor();
+showLobby();
 
-// Sidebar toggle logic
+// Click logo/brand to return to lobby
+const brandLogo = byId("sidebar-brand-logo");
+if (brandLogo) {
+  brandLogo.addEventListener("click", showLobby);
+}
+const headerBrandLogo = byId("header-brand");
+if (headerBrandLogo) {
+  headerBrandLogo.addEventListener("click", showLobby);
+}
+const btnBackToLobby = byId("btn-back-to-lobby");
+if (btnBackToLobby) {
+  btnBackToLobby.addEventListener("click", showLobby);
+}
+
+// Drag & Wheel Scroll rotation handlers for 3D Carousel
+let carouselClickPrevented = false;
+
+const carouselContainer = document.querySelector(".lobby-carousel-container");
+const carouselEl = document.querySelector(".carousel-3d");
+
+if (carouselContainer && carouselEl) {
+  let isDragging = false;
+  let startX = 0;
+  let startAngle = 0;
+  let lastScrollTime = 0;
+  
+  const startDrag = (clientX) => {
+    isDragging = true;
+    carouselClickPrevented = false;
+    startX = clientX;
+    startAngle = currentCarouselAngle;
+    carouselContainer.style.cursor = "grabbing";
+    carouselEl.classList.add("dragging");
+  };
+
+  const moveDrag = (clientX) => {
+    if (!isDragging) return;
+    const dx = clientX - startX;
+    if (Math.abs(dx) > 8) {
+      carouselClickPrevented = true;
+    }
+    currentCarouselAngle = startAngle + dx * 0.5;
+    carouselEl.style.transform = `rotateY(${currentCarouselAngle}deg)`;
+  };
+
+  const endDrag = () => {
+    if (!isDragging) return;
+    isDragging = false;
+    carouselContainer.style.cursor = "grab";
+    carouselEl.classList.remove("dragging");
+
+    // Snap to nearest card (45° steps)
+    const items = document.querySelectorAll(".carousel-item-3d");
+    const total = items.length;
+    const step = 360 / total;
+    if (!total) return;
+
+    let snappedIndex = Math.round(-currentCarouselAngle / step) % total;
+    if (snappedIndex < 0) snappedIndex += total;
+    activeCarouselIndex = snappedIndex;
+    rotateCarouselToAngle(-activeCarouselIndex * step);
+    updateActiveClasses();
+
+    setTimeout(() => { carouselClickPrevented = false; }, 100);
+  };
+
+  // Mouse Listeners
+  carouselContainer.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".carousel-nav-btn")) return;
+    startDrag(e.clientX);
+    e.preventDefault();
+  });
+  
+  window.addEventListener("mousemove", (e) => {
+    moveDrag(e.clientX);
+  });
+  
+  window.addEventListener("mouseup", () => {
+    endDrag();
+  });
+
+  // Touch Listeners
+  carouselContainer.addEventListener("touchstart", (e) => {
+    if (e.target.closest(".carousel-nav-btn")) return;
+    startDrag(e.touches[0].clientX);
+  });
+
+  window.addEventListener("touchmove", (e) => {
+    moveDrag(e.touches[0].clientX);
+  });
+
+  window.addEventListener("touchend", () => {
+    endDrag();
+  });
+  
+  // Mouse Wheel Scroll Listener
+  carouselContainer.addEventListener("wheel", (e) => {
+    const now = Date.now();
+    if (now - lastScrollTime < 200) {
+      e.preventDefault();
+      return;
+    }
+    
+    const delta = e.deltaY || e.deltaX;
+    if (Math.abs(delta) > 5) {
+      lastScrollTime = now;
+      const dir = delta > 0 ? 1 : -1;
+      rotateCarouselDir(dir);
+      e.preventDefault();
+    }
+  }, { passive: false });
+}
+
+// Mouse tracking for Agent Lobby 3D carousel cards to update spotlight gradient position
+document.querySelectorAll(".carousel-item-3d").forEach((card) => {
+  card.addEventListener("mousemove", (e) => {
+    const rect = card.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    card.style.setProperty("--x", `${x}px`);
+    card.style.setProperty("--y", `${y}px`);
+  });
+});
+
+let currentCarouselAngle = 0;
+let activeCarouselIndex = 0;
+
+// --- Tilted-cylinder carousel (overhead perspective look) ---
+// Cards are positioned by CSS nth-child as a full 360° cylinder.
+// The parent .carousel-3d is rotated on X (~-28deg) to tilt the
+// whole ring so the viewer looks at it from above, then Y is
+// animated to spin to the active card.
+
+function rotateCarouselToAngle(angle) {
+  const carousel = document.querySelector(".carousel-3d");
+  if (!carousel) return;
+
+  let delta = (angle - currentCarouselAngle) % 360;
+  if (delta > 180)  delta -= 360;
+  if (delta < -180) delta += 360;
+
+  currentCarouselAngle += delta;
+  carousel.style.transform = `rotateY(${currentCarouselAngle}deg)`;
+}
+
+// Helper: set active / near-active classes based on activeCarouselIndex
+function updateActiveClasses() {
+  const items = document.querySelectorAll(".carousel-item-3d");
+  const total = items.length;
+  items.forEach((item, idx) => {
+    let offset = idx - activeCarouselIndex;
+    if (offset > total / 2)  offset -= total;
+    if (offset < -total / 2) offset += total;
+    item.classList.toggle("active",      offset === 0);
+    item.classList.toggle("near-active", Math.abs(offset) === 1);
+  });
+}
+
+function rotateCarouselDir(dir) {
+  const items = document.querySelectorAll(".carousel-item-3d");
+  const total = items.length;
+  if (!total) return;
+  const step = 360 / total;
+  activeCarouselIndex = (activeCarouselIndex + dir + total) % total;
+  rotateCarouselToAngle(-activeCarouselIndex * step);
+  updateActiveClasses();
+}
+window.rotateCarouselDir = rotateCarouselDir;
+
+function handleCarouselItemClick(index, agentId, tabId) {
+  if (carouselClickPrevented) {
+    carouselClickPrevented = false;
+    return;
+  }
+  const items = document.querySelectorAll(".carousel-item-3d");
+  const total = items.length;
+  const step = 360 / total;
+
+  if (activeCarouselIndex === index) {
+    // Already front — pop/launch!
+    popCarouselCard(index, agentId, tabId);
+  } else {
+    activeCarouselIndex = index;
+    rotateCarouselToAngle(-index * step);
+    updateActiveClasses();
+  }
+}
+window.handleCarouselItemClick = handleCarouselItemClick;
+
+// Initial render — tilt the ring and activate card 0
+rotateCarouselToAngle(0);
+updateActiveClasses();
+
+
+function popCarouselCard(index, agentId, tabId) {
+  const carousel = document.querySelector(".carousel-3d");
+  const items = document.querySelectorAll(".carousel-item-3d");
+  const clickedCard = items[index];
+  
+  if (!carousel || !clickedCard) return;
+
+  carousel.classList.add("animating");
+  clickedCard.classList.add("selected");
+
+  setTimeout(() => {
+    if (agentId === "supervisor") {
+      showSupervisor();
+      setStatus("Performance Supervisor active.");
+    } else if (agentId === "creative-director") {
+      showDashboard();
+      setStatus("Finished ad workspace ready.");
+    } else if (agentId === "history") {
+      showHistory();
+      setStatus("Creative History loaded.");
+    } else {
+      // Specialist views
+      showResults();
+      activateTab(tabId);
+      setStatus(`Specialist: ${tabId} workspace active.`);
+    }
+    
+    // Hide lobby and reset states for next return
+    const lobby = byId("agent-lobby");
+    if (lobby) lobby.classList.add("hidden");
+    
+    carousel.classList.remove("animating");
+    clickedCard.classList.remove("selected");
+  }, 700);
+}
+window.popCarouselCard = popCarouselCard;
+
+// Sidebar toggle logic (AI Assistant)
 const btnChatOpen = byId("btn-chat-open");
 const appShell = document.querySelector(".app-shell");
 
@@ -3621,6 +3903,29 @@ if (btnChatClose && btnChatOpen && appShell) {
     appShell.classList.remove("assistant-closed");
     btnChatOpen.classList.add("hidden");
   });
+
+  // Always start with AI assistant closed on page load
+  appShell.classList.add("assistant-closed");
+  btnChatOpen.classList.remove("hidden");
+}
+
+// Left sidebar toggle logic
+const btnSidebarClose = byId("btn-sidebar-close");
+const btnSidebarOpen = byId("btn-sidebar-open");
+
+if (btnSidebarClose && btnSidebarOpen && appShell) {
+  btnSidebarClose.addEventListener("click", () => {
+    appShell.classList.add("sidebar-closed");
+    localStorage.setItem("sidebar_closed", "true");
+  });
+
+  btnSidebarOpen.addEventListener("click", () => {
+    appShell.classList.remove("sidebar-closed");
+    localStorage.removeItem("sidebar_closed");
+  });
+
+  // Always start with sidebar closed on page load
+  appShell.classList.add("sidebar-closed");
 }
 
 // Knowledge Base upload handler
@@ -3899,3 +4204,4 @@ window.toggleCampaign = toggleCampaign;
 window.removeUploadedSample = removeUploadedSample;
 window.removeKnowledgeImage = removeKnowledgeImage;
 window.selectKBItem = selectKBItem;
+window.showLobby = showLobby;

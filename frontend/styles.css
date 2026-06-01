@@ -34,16 +34,22 @@ button {
 }
 
 .app-shell {
+  --sidebar-w: 240px;
+  --assistant-w: 360px;
   height: 100vh;
   max-height: 100vh;
   overflow: hidden;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 360px;
-  transition: grid-template-columns 0.3s ease;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--assistant-w);
+  transition: grid-template-columns 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-shell.sidebar-closed {
+  --sidebar-w: 0px;
 }
 
 .app-shell.assistant-closed {
-  grid-template-columns: 240px minmax(0, 1fr) 0px;
+  --assistant-w: 0px;
 }
 
 .app-shell.assistant-closed .chat-panel {
@@ -57,6 +63,82 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 240px;
+  flex-shrink: 0;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  overflow: hidden;
+}
+
+.app-shell.sidebar-closed .sidebar {
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-shell.sidebar-closed #btn-sidebar-open {
+  display: flex !important;
+}
+
+.header-brand {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  opacity: 0;
+}
+
+.app-shell.sidebar-closed .header-brand {
+  display: flex !important;
+  animation: headerBrandFadeIn 0.3s forwards cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes headerBrandFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.sidebar-toggle-btn-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  margin-left: auto;
+}
+
+.sidebar-toggle-btn-close:hover {
+  background: #1a1a1a;
+  color: var(--white);
+}
+
+.sidebar-toggle-btn-open {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: none; /* Shown only when sidebar-closed */
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.sidebar-toggle-btn-open:hover {
+  background: #1a1a1a;
+  color: var(--white);
+  border-color: #3f3f46;
 }
 
 .brand {
@@ -179,6 +261,14 @@ button {
   flex: 1;
   overflow-y: auto;
   box-sizing: border-box;
+}
+
+/* When lobby is showing, lock scroll so the carousel stays centered */
+.canvas:has(.agent-lobby:not(.hidden)) {
+  overflow-y: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .hero h1 {
@@ -3701,5 +3791,299 @@ button {
 
 .google-status-msg.error {
   color: #ff5252;
+}
+
+/* ==========================================================================
+   AGENT LOBBY & TRANSITIONS
+   ========================================================================== */
+
+.agent-lobby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* Fill exactly the canvas height so carousel is always centered */
+  height: 100%;
+  flex: 1;
+  box-sizing: border-box;
+  padding: 24px 20px;
+  /* No overflow:hidden — it clips 3D-transformed cards */
+  overflow: visible;
+  animation: fadeInLobby 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@keyframes fadeInLobby {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.lobby-header {
+  text-align: center;
+  margin-bottom: 32px;
+  max-width: 650px;
+  flex-shrink: 0;
+}
+
+.lobby-title {
+  font-size: clamp(2rem, 4vw, 2.5rem);
+  font-weight: 800;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #ffffff 30%, #a1a1aa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.lobby-subtitle {
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.back-to-lobby-btn {
+  border: 1px solid var(--line) !important;
+  background: #111113 !important;
+  color: var(--white) !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+  transition: all 0.2s ease !important;
+}
+
+.back-to-lobby-btn:hover {
+  background: #27272a !important;
+  border-color: #3f3f46 !important;
+}
+
+.lobby-carousel-container {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1400px;
+  perspective-origin: 50% 50%;
+  overflow: visible;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.carousel-3d {
+  position: relative;
+  width: 205px;
+  height: 291px;
+  transform-style: preserve-3d;
+  transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.carousel-3d.dragging {
+  transition: none !important;
+}
+
+.carousel-item-3d {
+  position: absolute;
+  width: 205px;
+  height: 291px;
+  background: rgba(22, 22, 26, 0.95);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 16px;
+  padding: 21px 19px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition: box-shadow 0.3s ease,
+              border-color 0.3s ease,
+              opacity 0.5s ease;
+  user-select: none;
+  backdrop-filter: blur(16px);
+  opacity: 0.72;
+  transform-origin: center center;
+}
+
+.carousel-item-3d::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(800px circle at var(--x, 50%) var(--y, 50%), rgba(255,255,255,0.08), transparent 40%);
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.carousel-item-3d.active {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 30px rgba(255,255,255,0.06);
+  z-index: 50;
+}
+
+.carousel-item-3d.near-active {
+  opacity: 0.88;
+}
+
+.carousel-item-3d:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  opacity: 0.92;
+}
+
+.carousel-item-3d.active:hover {
+  opacity: 1;
+}
+
+/* Cylinder card positions — 8 cards, 45° apart, 325px radius */
+.carousel-item-3d:nth-child(1) { transform: rotateY(  0deg) translateZ(325px); }
+.carousel-item-3d:nth-child(2) { transform: rotateY( 45deg) translateZ(325px); }
+.carousel-item-3d:nth-child(3) { transform: rotateY( 90deg) translateZ(325px); }
+.carousel-item-3d:nth-child(4) { transform: rotateY(135deg) translateZ(325px); }
+.carousel-item-3d:nth-child(5) { transform: rotateY(180deg) translateZ(325px); }
+.carousel-item-3d:nth-child(6) { transform: rotateY(225deg) translateZ(325px); }
+.carousel-item-3d:nth-child(7) { transform: rotateY(270deg) translateZ(325px); }
+.carousel-item-3d:nth-child(8) { transform: rotateY(315deg) translateZ(325px); }
+
+/* Card Inner Components */
+.lobby-card-glow {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0);
+  transition: box-shadow 0.3s ease;
+}
+
+.carousel-item-3d:hover .lobby-card-glow {
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.15);
+}
+
+.lobby-card-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  background: #111113;
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  color: #a1a1aa;
+  transition: all 0.3s ease;
+}
+
+.carousel-item-3d:hover .lobby-card-icon,
+.carousel-item-3d.active .lobby-card-icon {
+  background: #ffffff;
+  color: #000000;
+  transform: scale(1.05);
+}
+
+.lobby-card-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 10px;
+  color: #ffffff;
+}
+
+.lobby-card-desc {
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 24px;
+  flex-grow: 1;
+}
+
+.lobby-card-action {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #ffffff;
+  transition: transform 0.3s ease;
+}
+
+.carousel-item-3d:hover .lobby-card-action {
+  transform: translateX(6px);
+}
+
+/* Nav Arrows */
+.carousel-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(18, 18, 18, 0.7);
+  border: 1px solid var(--line);
+  color: var(--white);
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 100;
+}
+
+.carousel-nav-btn:hover {
+  background: var(--white);
+  color: var(--black);
+  border-color: var(--white);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+}
+
+.carousel-nav-btn.prev { left: 40px; }
+.carousel-nav-btn.next { right: 40px; }
+
+/* Overhead-cylinder pop animation */
+.carousel-3d.animating .carousel-item-3d:not(.selected) {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.carousel-item-3d.selected {
+  z-index: 1000;
+  opacity: 1 !important;
+  border-color: #ffffff !important;
+  background: #000000 !important;
+  box-shadow: 0 0 80px rgba(255, 255, 255, 0.45) !important;
+  pointer-events: none;
+  animation: carouselCardPop 0.75s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+}
+
+@keyframes carouselCardPop {
+  0% {
+    opacity: 1;
+    transform: rotateY(0deg) translateZ(342px) scale(1);
+  }
+  40% {
+    transform: rotateY(0deg) translateZ(180px) scale(1.1) rotateX(5deg);
+    opacity: 0.95;
+  }
+  100% {
+    transform: rotateY(0deg) translateZ(54px) scale(1.8) rotateX(0deg);
+    opacity: 0;
+  }
+}
+
+/* Page pop/slide animation for workspaces */
+.supervisor-panel,
+.hero,
+.results-card,
+.history-card {
+  animation: sectionPopIn 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@keyframes sectionPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 

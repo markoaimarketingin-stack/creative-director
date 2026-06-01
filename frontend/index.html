@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="backend-url" content="">
   <title>Creative Director Engine</title>
-  <link rel="stylesheet" href="/styles.css?v=20260527_1">
+  <link rel="stylesheet" href="/styles.css?v=20260527_7">
   <script src="/env-config.js?v=20260522_4"></script>
 </head>
 <body>
@@ -54,7 +54,19 @@
   </section>
   <main class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><div class="brand-mark" style="background: transparent;"><img src="/IMG_20260420_033023.png" alt="M" style="width: 100%; height: 100%; object-fit: contain;"></div><div class="brand-name">Marko AI</div></div>
+      <div class="brand">
+        <div class="brand-logo-group" id="sidebar-brand-logo" style="display: flex; align-items: center; gap: 10px; cursor: pointer; transition: opacity 0.2s ease;">
+          <div class="brand-mark" style="background: transparent;">
+            <img src="/IMG_20260420_033023.png" alt="M" style="width: 100%; height: 100%; object-fit: contain;">
+          </div>
+          <div class="brand-name">Marko AI</div>
+        </div>
+        <button id="btn-sidebar-close" class="sidebar-toggle-btn-close" type="button" aria-label="Collapse Sidebar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+      </div>
       <p class="nav-label">ORCHESTRATOR</p>
       <button class="nav-item active" id="supervisor-nav" type="button">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="nav-icon-svg"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
@@ -107,6 +119,27 @@
     </aside>
     <section class="main-panel">
       <div class="global-actions">
+        <button id="btn-sidebar-open" class="sidebar-toggle-btn-open" type="button" aria-label="Open Sidebar" style="display: none;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <div id="header-brand" class="header-brand">
+          <div class="brand-mark" style="background: transparent; width: 28px; height: 28px;">
+            <img src="/IMG_20260420_033023.png" alt="M" style="width: 100%; height: 100%; object-fit: contain;">
+          </div>
+          <div class="brand-name" style="font-weight: 800; font-size: 1.1rem; letter-spacing: 0.02em;">Marko AI</div>
+        </div>
+        <button id="btn-back-to-lobby" class="top-pill back-to-lobby-btn" type="button" style="display: none; align-items: center; gap: 8px; margin-left: 16px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>Back to Lobby</span>
+        </button>
+        <div style="flex-grow: 1;"></div>
         <button class="top-pill" id="sup-btn-kb" type="button">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>Knowledge Base
         </button>
@@ -118,7 +151,151 @@
         </button>
       </div>
       <div class="canvas">
-        <section class="supervisor-panel" id="supervisor-panel">
+        <section class="agent-lobby" id="agent-lobby">
+          <div class="lobby-header">
+            <h1 class="lobby-title">Marko AI Specialized Workspaces</h1>
+            <p class="lobby-subtitle">Drag or scroll to fan through workspaces. Click a card to focus it, click again to open.</p>
+          </div>
+          <div class="lobby-carousel-container">
+            <button class="carousel-nav-btn prev" type="button" aria-label="Previous Workspace" onclick="rotateCarouselDir(-1)">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            
+            <div class="carousel-3d">
+              <!-- Item 1: Supervisor -->
+              <div class="carousel-item-3d active" onclick="handleCarouselItemClick(0, 'supervisor')">
+                <div class="lobby-card-glow"></div>
+                <div class="lobby-card-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                  </svg>
+                </div>
+                <h3 class="lobby-card-title">Supervisor</h3>
+                <p class="lobby-card-desc">Orchestrate the entire campaign flow, consult the AI chatbot assistant, search the knowledge base, and analyze history.</p>
+                <div class="lobby-card-action">Open Workspace →</div>
+              </div>
+
+              <!-- Item 2: Creative Director -->
+              <div class="carousel-item-3d" onclick="handleCarouselItemClick(1, 'creative-director')">
+                <div class="lobby-card-glow"></div>
+                <div class="lobby-card-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                  </svg>
+                </div>
+                <h3 class="lobby-card-title">Creative Director</h3>
+                <p class="lobby-card-desc">Run the finished ad generation engine to produce high-scoring copy, visual concepts, images, and export-ready ad packages.</p>
+                <div class="lobby-card-action">Open Workspace →</div>
+              </div>
+
+              <!-- Item 3: Hook Generator -->
+              <div class="carousel-item-3d" onclick="handleCarouselItemClick(2, 'hooks', 'hooks')">
+                <div class="lobby-card-glow"></div>
+                <div class="lobby-card-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </div>
+                <h3 class="lobby-card-title">Hook Generator</h3>
+                <p class="lobby-card-desc">Review scroll-stopping hooks generated from campaign parameters to maximize early CTR.</p>
+                <div class="lobby-card-action">Open Workspace →</div>
+              </div>
+
+              <!-- Item 4: Angle Strategist -->
+              <div class="carousel-item-3d" onclick="handleCarouselItemClick(3, 'angles', 'angles')">
+                <div class="lobby-card-glow"></div>
+                <div class="lobby-card-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                  </svg>
+                </div>
+                <h3 class="lobby-card-title">Angle Strategist</h3>
+                <p class="lobby-card-desc">Examine psychological angles and key marketing concepts targeted to specific client segments.</p>
+                <div class="lobby-card-action">Open Workspace →</div>
+              </div>
+
+              <!-- Item 5: Copy Architect -->
+              <div class="carousel-item-3d" onclick="handleCarouselItemClick(4, 'copy', 'copy')">
+                <div class="lobby-card-glow"></div>
+                <div class="lobby-card-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="4 7 4 4 20 4 20 7"></polyline>
+                    <line x1="9" y1="20" x2="15" y2="20"></line>
+                    <line x1="12" y1="4" x2="12" y2="20"></line>
+                  </svg>
+                </div>
+                <h3 class="lobby-card-title">Copy Architect</h3>
+                <p class="lobby-card-desc">Review, edit, and export structured platform-specific headlines, primary text, and descriptions.</p>
+                <div class="lobby-card-action">Open Workspace →</div>
+              </div>
+
+              <!-- Item 6: Visual Planner -->
+              <div class="carousel-item-3d" onclick="handleCarouselItemClick(5, 'concepts', 'concepts')">
+                <div class="lobby-card-glow"></div>
+                <div class="lobby-card-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                </div>
+                <h3 class="lobby-card-title">Visual Planner</h3>
+                <p class="lobby-card-desc">Inspect generated image concepts, style references, aspect ratios, and detail cues.</p>
+                <div class="lobby-card-action">Open Workspace →</div>
+              </div>
+
+              <!-- Item 7: Reels Script Director -->
+              <div class="carousel-item-3d" onclick="handleCarouselItemClick(6, 'reels', 'reels')">
+                <div class="lobby-card-glow"></div>
+                <div class="lobby-card-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+                    <line x1="7" y1="6" x2="7" y2="18"></line>
+                    <line x1="12" y1="6" x2="12" y2="18"></line>
+                    <line x1="17" y1="6" x2="17" y2="18"></line>
+                  </svg>
+                </div>
+                <h3 class="lobby-card-title">Reels Script Director</h3>
+                <p class="lobby-card-desc">Analyze viral reels transcripts, discover fresh audio trends, and generate custom high-converting scripts.</p>
+                <div class="lobby-card-action">Open Workspace →</div>
+              </div>
+
+              <!-- Item 8: Creative History -->
+              <div class="carousel-item-3d" onclick="handleCarouselItemClick(7, 'history')">
+                <div class="lobby-card-glow"></div>
+                <div class="lobby-card-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                  </svg>
+                </div>
+                <h3 class="lobby-card-title">Creative History</h3>
+                <p class="lobby-card-desc">Access previous runs, check visual assets, download bulk upload CSV templates, and zip archives.</p>
+                <div class="lobby-card-action">Open Workspace →</div>
+              </div>
+            </div>
+            
+            <button class="carousel-nav-btn next" type="button" aria-label="Next Workspace" onclick="rotateCarouselDir(1)">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
+        </section>
+        <section class="supervisor-panel hidden" id="supervisor-panel">
           <div class="supervisor-header">
             <div class="supervisor-header-left">
               <div class="supervisor-header-icon" style="background: transparent; border: none; padding-right: 0;">
@@ -780,6 +957,6 @@
     </div>
   </div>
 
-  <script defer src="/app.js?v=20260528_6"></script>
+  <script defer src="/app.js?v=20260528_11"></script>
 </body>
 </html>
