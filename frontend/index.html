@@ -177,7 +177,6 @@
                 </div>
                 <h3 class="lobby-card-title">Supervisor</h3>
                 <p class="lobby-card-desc">Orchestrate the entire campaign flow, consult the AI chatbot assistant, search the knowledge base, and analyze history.</p>
-                <div class="lobby-card-action">Open Workspace →</div>
               </div>
 
               <!-- Item 2: Creative Director -->
@@ -192,8 +191,7 @@
                   </svg>
                 </div>
                 <h3 class="lobby-card-title">Creative Director</h3>
-                <p class="lobby-card-desc">Run the finished ad generation engine to produce high-scoring copy, visual concepts, images, and export-ready ad packages.</p>
-                <div class="lobby-card-action">Open Workspace →</div>
+                <p class="lobby-card-desc">Run the ad engine to generate strong copy, visual concepts, images, and export-ready campaigns.</p>
               </div>
 
               <!-- Item 3: Hook Generator -->
@@ -207,7 +205,6 @@
                 </div>
                 <h3 class="lobby-card-title">Hook Generator</h3>
                 <p class="lobby-card-desc">Review scroll-stopping hooks generated from campaign parameters to maximize early CTR.</p>
-                <div class="lobby-card-action">Open Workspace →</div>
               </div>
 
               <!-- Item 4: Angle Strategist -->
@@ -225,7 +222,6 @@
                 </div>
                 <h3 class="lobby-card-title">Angle Strategist</h3>
                 <p class="lobby-card-desc">Examine psychological angles and key marketing concepts targeted to specific client segments.</p>
-                <div class="lobby-card-action">Open Workspace →</div>
               </div>
 
               <!-- Item 5: Copy Architect -->
@@ -240,7 +236,6 @@
                 </div>
                 <h3 class="lobby-card-title">Copy Architect</h3>
                 <p class="lobby-card-desc">Review, edit, and export structured platform-specific headlines, primary text, and descriptions.</p>
-                <div class="lobby-card-action">Open Workspace →</div>
               </div>
 
               <!-- Item 6: Visual Planner -->
@@ -255,7 +250,6 @@
                 </div>
                 <h3 class="lobby-card-title">Visual Planner</h3>
                 <p class="lobby-card-desc">Inspect generated image concepts, style references, aspect ratios, and detail cues.</p>
-                <div class="lobby-card-action">Open Workspace →</div>
               </div>
 
               <!-- Item 7: Reels Script Director -->
@@ -271,7 +265,6 @@
                 </div>
                 <h3 class="lobby-card-title">Reels Script Director</h3>
                 <p class="lobby-card-desc">Analyze viral reels transcripts, discover fresh audio trends, and generate custom high-converting scripts.</p>
-                <div class="lobby-card-action">Open Workspace →</div>
               </div>
 
               <!-- Item 8: Creative History -->
@@ -284,7 +277,6 @@
                 </div>
                 <h3 class="lobby-card-title">Creative History</h3>
                 <p class="lobby-card-desc">Access previous runs, check visual assets, download bulk upload CSV templates, and zip archives.</p>
-                <div class="lobby-card-action">Open Workspace →</div>
               </div>
             </div>
             
@@ -352,11 +344,7 @@
               <label class="field"><span>Visual Style</span><input id="f-visual" type="text" value=""></label>
               <label class="field"><span>Brand Colors (Optional, e.g., blackwhite, bluegreen)</span><input id="f-brand-colors" type="text" placeholder="blackwhite, bluegreen"></label>
               <label class="field"><span>Brand Fonts (Optional, e.g., Arial, Helvetica)</span><input id="f-brand-fonts" type="text" placeholder="Arial, Helvetica"></label>
-              <label class="field span-2">
-                <span>Logo Image</span>
-                <input id="f-logo" type="file" accept="image/*">
-                <small>Optional. Used for final ad rendering.</small>
-              </label>
+
               <label class="field span-2">
                 <span>Sample Context Images (Upload)</span>
                 <input id="f-samples" type="file" multiple accept="image/*">
@@ -821,6 +809,11 @@
         <div class="chat-actions">
           <button class="icon-btn" type="button" aria-label="Settings" id="btn-chat-settings" title="Manage Models">⚙</button>
           <button class="icon-btn" type="button" aria-label="Add" id="btn-chat-new">+</button>
+          <button class="icon-btn" type="button" aria-label="Saved Prompts" id="btn-chat-saved-prompts" title="Saved Prompts">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display: block;">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </button>
           <button class="icon-btn" type="button" aria-label="History" id="btn-chat-history">◷</button>
           <button class="icon-btn" type="button" aria-label="Close" id="btn-chat-close">✕</button>
         </div>
@@ -848,6 +841,14 @@
           <button id="btn-chat-history-close" style="background: none; border: none; color: #a1a1aa; cursor: pointer; font-size: 16px; padding: 2px 6px; line-height: 1; transition: color 0.2s;" onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='#a1a1aa'" title="Close">✕</button>
         </div>
         <div id="chat-sessions-list"></div>
+      </div>
+
+      <div id="chat-saved-prompts-panel" class="hidden" style="position: absolute; top: 60px; right: 10px; width: 250px; background: #18181b; border: 1px solid #27272a; border-radius: 8px; z-index: 100; max-height: 300px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+        <div style="padding: 10px; border-bottom: 1px solid #27272a; font-weight: 500; color: #ffffff; display: flex; justify-content: space-between; align-items: center;">
+          <span>Saved Prompts</span>
+          <button id="btn-chat-saved-prompts-close" style="background: none; border: none; color: #a1a1aa; cursor: pointer; font-size: 16px; padding: 2px 6px; line-height: 1; transition: color 0.2s;" onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='#a1a1aa'" title="Close">✕</button>
+        </div>
+        <div id="chat-saved-prompts-list" style="padding: 10px; display: flex; flex-direction: column; gap: 8px;"></div>
       </div>
 
       <div id="chat-settings-panel" class="hidden" style="position: absolute; top: 60px; right: 10px; width: 280px; background: #18181b; border: 1px solid #27272a; border-radius: 12px; z-index: 101; max-height: 400px; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.5); padding: 16px; display: flex; flex-direction: column; gap: 14px;">
@@ -951,6 +952,7 @@
       <div class="kb-tabs" style="display: flex; gap: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line, #27272a); padding-bottom: 8px;">
         <button class="tab-btn" data-kb-tab="asset" onclick="switchKbTab('asset')">Company Assets</button>
         <button class="tab-btn active" data-kb-tab="upload" onclick="switchKbTab('upload')">Uploaded Files</button>
+        <button class="tab-btn" data-kb-tab="logo" onclick="switchKbTab('logo')">Logo Image</button>
       </div>
       <p id="kb-hint-text" style="color:var(--muted,#666);margin-bottom:12px;margin-top:0;">Select one or more images to use as sample context for generation.</p>
       <div id="kb-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;max-height:60vh;overflow:auto;padding:6px;"></div>

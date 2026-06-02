@@ -157,6 +157,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // Close other panels if open
       const historyPanel = document.getElementById("chat-history-panel");
       if (historyPanel) historyPanel.classList.add("hidden");
+      const savedPanel = document.getElementById("chat-saved-prompts-panel");
+      if (savedPanel) savedPanel.classList.add("hidden");
       
       chatSettingsPanel.classList.toggle("hidden");
     });
@@ -183,10 +185,43 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Saved Prompts Toggle and Listeners inside DOMContentLoaded
+  const btnChatSavedPrompts = document.getElementById("btn-chat-saved-prompts");
+  const btnChatSavedPromptsClose = document.getElementById("btn-chat-saved-prompts-close");
+  const chatSavedPromptsPanel = document.getElementById("chat-saved-prompts-panel");
+
+  if (btnChatSavedPrompts && chatSavedPromptsPanel) {
+    btnChatSavedPrompts.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // Close other panels if open
+      const historyPanel = document.getElementById("chat-history-panel");
+      if (historyPanel) historyPanel.classList.add("hidden");
+      if (chatSettingsPanel) chatSettingsPanel.classList.add("hidden");
+
+      chatSavedPromptsPanel.classList.toggle("hidden");
+      if (!chatSavedPromptsPanel.classList.contains("hidden")) {
+        if (typeof window.renderSavedPromptsList === "function") {
+          window.renderSavedPromptsList();
+        }
+      }
+    });
+  }
+
+  if (btnChatSavedPromptsClose && chatSavedPromptsPanel) {
+    btnChatSavedPromptsClose.addEventListener("click", () => {
+      chatSavedPromptsPanel.classList.add("hidden");
+    });
+  }
+
   // Close panels when clicking outside
   document.addEventListener("click", (e) => {
     if (chatSettingsPanel && !chatSettingsPanel.classList.contains("hidden") && !chatSettingsPanel.contains(e.target) && e.target !== btnChatSettings) {
       chatSettingsPanel.classList.add("hidden");
+    }
+    const savedPanel = document.getElementById("chat-saved-prompts-panel");
+    const btnSaved = document.getElementById("btn-chat-saved-prompts");
+    if (savedPanel && !savedPanel.classList.contains("hidden") && !savedPanel.contains(e.target) && e.target !== btnSaved) {
+      savedPanel.classList.add("hidden");
     }
   });
 
@@ -488,6 +523,7 @@ let chatContext = {};
 let chatSessionId = null; // Default to new chat, history must be manually selected
 let selectedKnowledgeImages = [];
 let selectedSampleFiles = [];
+let selectedLogoUrl = "";
 let currentSuggestions = [];
 let currentPayload = null;
 let instagramIngestionPollHandle = null;
@@ -992,9 +1028,8 @@ function resetGenerationForm() {
     if (el) el.value = "";
   });
 
-  // Reset file inputs
-  const logoEl = byId("f-logo");
-  if (logoEl) logoEl.value = "";
+  // Reset logo and file inputs
+  clearSelectedLogo();
   
   const samplesEl = byId("f-samples");
   if (samplesEl) samplesEl.value = "";
@@ -1119,14 +1154,16 @@ function switchKbTab(tabName) {
   const hintText = document.getElementById("kb-hint-text");
   if (hintText) {
     if (tabName === "asset") {
-      hintText.textContent = "Company logo and assets used in campaigns.";
+      hintText.textContent = "Company assets used in campaigns as reference context.";
+    } else if (tabName === "logo") {
+      hintText.textContent = "Upload and select a brand logo to overlay on generated ads.";
     } else {
       hintText.textContent = "Select one or more uploaded images to use as sample context.";
     }
   }
   const uploadBtn = document.getElementById("kb-upload-btn");
   if (uploadBtn) {
-    uploadBtn.style.display = (tabName === "upload") ? "inline-flex" : "none";
+    uploadBtn.style.display = "inline-flex";
   }
   const grid = document.getElementById("kb-grid");
   if (grid) grid.innerHTML = `<div style="padding:12px;color:var(--muted,#666);">Loading...</div>`;
@@ -1165,7 +1202,8 @@ async function fetchKnowledgeBaseImages() {
         else tags = [];
       }
       if (activeKbTab === "asset") return tags.includes("asset");
-      return tags.includes("upload") || (!tags.includes("generation") && !tags.includes("asset"));
+      if (activeKbTab === "logo") return tags.includes("logo");
+      return tags.includes("upload") || (!tags.includes("generation") && !tags.includes("asset") && !tags.includes("logo"));
     });
     
     renderKbGrid(items);
@@ -1201,13 +1239,26 @@ function renderKbGrid(items) {
     const url = toPublicAssetUrl(it.web_path || it.webPath || it.path || "");
     const title = esc(it.title || it.filename || "Untitled");
     const escUrl = esc(url);
-    const isSelected = selectedKnowledgeImages.includes(url);
-    const atLimit = totalSelectedReferences() >= MAX_SAMPLE_IMAGES;
-    const useButtonHtml = isSelected
-      ? `<button class="link-btn" disabled style="opacity:0.5;cursor:not-allowed;">Already in use</button>`
-      : atLimit
-        ? `<button class="link-btn" disabled style="opacity:0.5;cursor:not-allowed;">Limit reached</button>`
-        : `<button class="link-btn" onclick="useKnowledgeImage('${escUrl}')">Use in generation</button>`;
+    
+    let useButtonHtml = "";
+    if (activeKbTab === "logo") {
+      const isActiveLogo = (selectedLogoUrl === url);
+      useButtonHtml = isActiveLogo
+        ? `<div style="display:flex;flex-direction:column;gap:4px;align-items:center;">
+             <span class="active-logo-badge" style="background:#10b981;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem;font-weight:700;user-select:none;display:inline-block;text-align:center;">Active Logo</span>
+             <button class="link-btn" onclick="clearSelectedLogo()" style="background:#2d1918;color:#ef4444;border:1px solid #7d2d27;padding:2px 6px;font-size:0.7rem;cursor:pointer;width:100%;box-sizing:border-box;">Deactivate</button>
+           </div>`
+        : `<button class="link-btn" onclick="selectLogoFromKB('${escUrl}', event)">Use as logo</button>`;
+    } else {
+      const isSelected = selectedKnowledgeImages.includes(url);
+      const atLimit = totalSelectedReferences() >= MAX_SAMPLE_IMAGES;
+      useButtonHtml = isSelected
+        ? `<button class="link-btn" disabled style="opacity:0.5;cursor:not-allowed;">Already in use</button>`
+        : atLimit
+          ? `<button class="link-btn" disabled style="opacity:0.5;cursor:not-allowed;">Limit reached</button>`
+          : `<button class="link-btn" onclick="useKnowledgeImage('${escUrl}')">Use in generation</button>`;
+    }
+
     return `
       <div class="card" style="text-align:center;padding:8px;position:relative;">
         <button class="icon-btn" onclick="deleteKbImage('${esc(it.id)}')" style="position:absolute;top:4px;right:4px;width:24px;height:24px;line-height:24px;padding:0;background:rgba(0,0,0,0.5);color:white;border-radius:50%;font-size:12px;" aria-label="Delete Image">✕</button>
@@ -1222,6 +1273,46 @@ function renderKbGrid(items) {
       </div>
     `;
   }).join("");
+}
+
+function selectLogoFromKB(url, event) {
+  if (event) event.stopPropagation();
+  selectedLogoUrl = url;
+  
+  const previewImg = document.getElementById("logo-preview-img");
+  const placeholder = document.getElementById("logo-preview-placeholder");
+  const clearBtn = document.getElementById("btn-clear-logo");
+  
+  if (previewImg && placeholder && clearBtn) {
+    previewImg.src = url;
+    previewImg.classList.remove("hidden");
+    placeholder.classList.add("hidden");
+    clearBtn.classList.remove("hidden");
+  }
+  
+  // Refresh the KB grid to show "Active Logo" state
+  fetchKnowledgeBaseImages();
+}
+
+function clearSelectedLogo() {
+  selectedLogoUrl = "";
+  
+  const previewImg = document.getElementById("logo-preview-img");
+  const placeholder = document.getElementById("logo-preview-placeholder");
+  const clearBtn = document.getElementById("btn-clear-logo");
+  
+  if (previewImg && placeholder && clearBtn) {
+    previewImg.src = "";
+    previewImg.classList.add("hidden");
+    placeholder.classList.remove("hidden");
+    clearBtn.classList.add("hidden");
+  }
+  
+  // Refresh the KB grid to reset the "Active Logo" state if the modal is open
+  const modal = document.getElementById("kbModal");
+  if (modal && !modal.classList.contains("hidden")) {
+    fetchKnowledgeBaseImages();
+  }
 }
 
 function list(target, items, render) {
@@ -2251,7 +2342,24 @@ function appendChat(role, text, isHtml) {
   const row = document.createElement("div");
   row.className = "chat-row" + (role === "user" ? " user" : "");
   const content = isHtml ? text : esc(text);
-  row.innerHTML = `<div class="chat-avatar">${role === "user" ? "You" : "AI"}</div><div class="chat-bubble">${content}<div class="meta">${role === "user" ? "You" : "Assistant"}</div></div>`;
+  if (role === "user") {
+    row.innerHTML = `
+      <div class="chat-avatar">You</div>
+      <div class="chat-bubble" style="position: relative; padding-right: 32px;">
+        <div class="chat-bubble-text">${content}</div>
+        <div class="chat-prompt-menu-container">
+          <button class="chat-prompt-menu-btn" onclick="toggleChatPromptMenu(this, event)">⋮</button>
+          <div class="chat-prompt-menu-dropdown hidden">
+            <button class="chat-prompt-menu-item" onclick="editChatPrompt(this, event)">Edit prompt</button>
+            <button class="chat-prompt-menu-item" onclick="saveChatPrompt(this, event)">Save prompt</button>
+          </div>
+        </div>
+        <div class="meta">You</div>
+      </div>
+    `;
+  } else {
+    row.innerHTML = `<div class="chat-avatar">AI</div><div class="chat-bubble">${content}<div class="meta">Assistant</div></div>`;
+  }
   chatBody.appendChild(row);
   chatBody.scrollTop = chatBody.scrollHeight;
 }
@@ -2750,8 +2858,8 @@ async function buildPayload() {
     sample_images: []
   };
 
-  if (logoInput && logoInput.files && logoInput.files[0]) {
-    payload.logo_image = await getBase64(logoInput.files[0]);
+  if (selectedLogoUrl) {
+    payload.logo_image = selectedLogoUrl;
   }
 
   if (selectedSampleFiles.length > 0) {
@@ -2799,19 +2907,6 @@ async function buildPayload() {
 }
 
 async function executeCampaignPipeline(payload) {
-  // Upload logo as asset to KB
-  const logoInput = byId("f-logo");
-  if (logoInput && logoInput.files && logoInput.files[0]) {
-    try {
-      const fd = new FormData();
-      fd.append("file", logoInput.files[0], logoInput.files[0].name);
-      fd.append("title", `${byId("f-brand").value || "asset"} - ${logoInput.files[0].name}`);
-      fd.append("tags", "asset");
-      await fetch(`${API_BASE_URL}/knowledge-base/images`, { method: "POST", body: fd });
-    } catch (e) {
-      console.warn("Logo KB upload failed", e);
-    }
-  }
 
   // If user uploaded sample files, save them to knowledge base first
   if (selectedSampleFiles.length) {
@@ -3424,6 +3519,12 @@ function wireEvents() {
 
   if (btnChatHistory) {
     btnChatHistory.addEventListener("click", async () => {
+      // Close other panels if open
+      const settingsPanel = document.getElementById("chat-settings-panel");
+      if (settingsPanel) settingsPanel.classList.add("hidden");
+      const savedPanel = document.getElementById("chat-saved-prompts-panel");
+      if (savedPanel) savedPanel.classList.add("hidden");
+
       chatHistoryPanel.classList.toggle("hidden");
       if (!chatHistoryPanel.classList.contains("hidden")) {
         chatSessionsList.innerHTML = '<div style="padding: 10px;">Loading...</div>';
@@ -3942,7 +4043,7 @@ if (kbUploadInput) {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("title", file.name);
-      formData.append("tags", activeKbTab === "asset" ? "asset" : "upload");
+      formData.append("tags", activeKbTab === "logo" ? "logo" : (activeKbTab === "asset" ? "asset" : "upload"));
       
       try {
         const res = await fetch(endpoint, {
@@ -4187,6 +4288,237 @@ function generateDummyTrends() {
   `;
 }
 
+// --- Chat Prompt Menu & Inline Editing ---
+function toggleChatPromptMenu(btn, event) {
+  event.stopPropagation();
+  // Close any other open dropdowns first
+  document.querySelectorAll('.chat-prompt-menu-dropdown').forEach(dropdown => {
+    if (dropdown !== btn.nextElementSibling) {
+      dropdown.classList.add('hidden');
+    }
+  });
+  
+  const dropdown = btn.nextElementSibling;
+  if (dropdown) {
+    dropdown.classList.toggle('hidden');
+  }
+}
+
+// Close dropdowns when clicking anywhere outside
+document.addEventListener('click', () => {
+  document.querySelectorAll('.chat-prompt-menu-dropdown').forEach(dropdown => {
+    dropdown.classList.add('hidden');
+  });
+});
+
+function editChatPrompt(btn, event) {
+  event.stopPropagation();
+  const dropdown = btn.closest('.chat-prompt-menu-dropdown');
+  if (dropdown) dropdown.classList.add('hidden');
+  
+  const bubble = btn.closest('.chat-bubble');
+  const bubbleTextDiv = bubble.querySelector('.chat-bubble-text');
+  if (!bubbleTextDiv) return;
+  
+  if (bubble.classList.contains('editing-prompt')) return;
+  bubble.classList.add('editing-prompt');
+  
+  const originalText = bubbleTextDiv.innerText;
+  bubbleTextDiv.dataset.originalText = originalText;
+  
+  // Render edit textarea and actions
+  bubbleTextDiv.innerHTML = `
+    <textarea class="chat-edit-textarea">${originalText}</textarea>
+    <div class="chat-edit-actions">
+      <button class="chat-edit-cancel-btn" onclick="cancelEditPrompt(this, event)">Cancel</button>
+      <button class="chat-edit-save-btn" onclick="saveEditedPrompt(this, event)">Save & Send</button>
+    </div>
+  `;
+  
+  const textarea = bubbleTextDiv.querySelector('.chat-edit-textarea');
+  if (textarea) {
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }
+}
+
+function cancelEditPrompt(btn, event) {
+  event.stopPropagation();
+  const bubble = btn.closest('.chat-bubble');
+  const bubbleTextDiv = bubble.querySelector('.chat-bubble-text');
+  bubble.classList.remove('editing-prompt');
+  const originalText = bubbleTextDiv.dataset.originalText || "";
+  bubbleTextDiv.innerText = originalText;
+}
+
+async function saveEditedPrompt(btn, event) {
+  event.stopPropagation();
+  const bubble = btn.closest('.chat-bubble');
+  const bubbleTextDiv = bubble.querySelector('.chat-bubble-text');
+  const textarea = bubbleTextDiv.querySelector('.chat-edit-textarea');
+  if (!textarea) return;
+  
+  const newText = textarea.value.trim();
+  if (!newText) return;
+  
+  bubble.classList.remove('editing-prompt');
+  bubbleTextDiv.innerText = newText;
+  
+  // Set chat input value and trigger sending
+  if (chatInput) {
+    chatInput.value = newText;
+    sendChatMessage();
+  }
+}
+
+function saveChatPrompt(btn, event) {
+  event.stopPropagation();
+  const dropdown = btn.closest('.chat-prompt-menu-dropdown');
+  if (dropdown) dropdown.classList.add('hidden');
+  
+  const bubble = btn.closest('.chat-bubble');
+  const bubbleTextDiv = bubble.querySelector('.chat-bubble-text');
+  if (!bubbleTextDiv) return;
+  
+  const text = bubbleTextDiv.innerText.trim();
+  if (!text) return;
+  
+  let saved = [];
+  try {
+    saved = JSON.parse(localStorage.getItem('saved_prompts') || '[]');
+  } catch (e) {
+    saved = [];
+  }
+  
+  if (!saved.includes(text)) {
+    saved.push(text);
+    localStorage.setItem('saved_prompts', JSON.stringify(saved));
+    showToastNotification("Prompt saved!");
+  } else {
+    showToastNotification("Prompt already saved.");
+  }
+  
+  renderSavedPromptsList();
+}
+
+// Helper to show a brief elegant toast notification
+function showToastNotification(message) {
+  const toast = document.createElement('div');
+  toast.style.position = 'fixed';
+  toast.style.bottom = '20px';
+  toast.style.right = '20px';
+  toast.style.background = '#18181b';
+  toast.style.border = '1px solid #27272a';
+  toast.style.color = '#ffffff';
+  toast.style.padding = '10px 16px';
+  toast.style.borderRadius = '8px';
+  toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+  toast.style.zIndex = '3000';
+  toast.style.fontSize = '0.85rem';
+  toast.style.fontFamily = 'inherit';
+  toast.innerText = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.transition = 'opacity 0.5s ease';
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 500);
+  }, 2000);
+}
+
+function renderSavedPromptsList() {
+  const chatSavedPromptsList = document.getElementById("chat-saved-prompts-list");
+  if (!chatSavedPromptsList) return;
+  let saved = [];
+  try {
+    saved = JSON.parse(localStorage.getItem('saved_prompts') || '[]');
+  } catch (e) {
+    saved = [];
+  }
+  
+  if (saved.length === 0) {
+    chatSavedPromptsList.innerHTML = `<div style="color: #71717a; font-size: 0.82rem; text-align: center; padding: 12px;">No saved prompts yet.</div>`;
+    return;
+  }
+  
+  chatSavedPromptsList.innerHTML = saved.map((promptText, index) => {
+    const escText = esc(promptText);
+    const safeTextForOnclick = escText.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    return `
+      <div class="saved-prompt-item">
+        <div class="saved-prompt-text" title="${escText}">
+          ${escText}
+        </div>
+        <div class="saved-prompt-actions">
+          <button class="saved-prompt-use-btn" onclick="useSavedPrompt('${safeTextForOnclick}')">Use</button>
+          <button class="saved-prompt-delete-btn" onclick="deleteSavedPrompt(${index}, event)" title="Delete prompt">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function deleteSavedPrompt(index, event) {
+  event.stopPropagation();
+  let saved = [];
+  try {
+    saved = JSON.parse(localStorage.getItem('saved_prompts') || '[]');
+  } catch (e) {
+    saved = [];
+  }
+  
+  if (index >= 0 && index < saved.length) {
+    saved.splice(index, 1);
+    localStorage.setItem('saved_prompts', JSON.stringify(saved));
+  }
+  renderSavedPromptsList();
+  showToastNotification("Prompt deleted.");
+}
+
+function useSavedPrompt(text) {
+  if (chatInput) {
+    chatInput.value = text;
+    chatInput.focus();
+    chatInput.dispatchEvent(new Event('input'));
+  }
+  
+  const chatSavedPromptsPanel = document.getElementById("chat-saved-prompts-panel");
+  if (chatSavedPromptsPanel) {
+    chatSavedPromptsPanel.classList.add("hidden");
+  }
+  
+  // 1. Open sidebar panel if closed
+  const appShell = document.querySelector(".app-shell");
+  const btnChatOpen = document.getElementById("btn-chat-open");
+  if (appShell && appShell.classList.contains("assistant-closed")) {
+    appShell.classList.remove("assistant-closed");
+  }
+  if (btnChatOpen) {
+    btnChatOpen.classList.add("hidden");
+  }
+  
+  // 2. Redirect/Switch to Chatbot Tab inside Assistant
+  const tabChatbotBtn = document.getElementById("tab-chatbot-btn");
+  const tabSuggestionsBtn = document.getElementById("tab-suggestions-btn");
+  const chatbotContentArea = document.getElementById("chatbot-content-area");
+  const suggestionsContentArea = document.getElementById("suggestions-content-area");
+  
+  if (tabChatbotBtn && tabSuggestionsBtn && chatbotContentArea && suggestionsContentArea) {
+    tabChatbotBtn.classList.add("active");
+    tabSuggestionsBtn.classList.remove("active");
+    chatbotContentArea.classList.remove("hidden");
+    suggestionsContentArea.classList.add("hidden");
+  }
+  
+  // Scroll chat body to bottom and focus input again
+  const chatBody = document.getElementById("chat-body");
+  if (chatBody) {
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+  if (chatInput) {
+    chatInput.focus();
+  }
+}
+
 // Expose functions globally for inline HTML click handlers
 window.showDashboard = showDashboard;
 window.switchReelsDirectorTab = switchReelsDirectorTab;
@@ -4197,6 +4529,8 @@ window.closeImageModal = closeImageModal;
 window.closeKbModal = closeKbModal;
 window.switchKbTab = switchKbTab;
 window.openKbModal = openKbModal;
+window.selectLogoFromKB = selectLogoFromKB;
+window.clearSelectedLogo = clearSelectedLogo;
 window.openImageModal = openImageModal;
 window.deleteKbImage = deleteKbImage;
 window.useKnowledgeImage = useKnowledgeImage;
@@ -4205,3 +4539,13 @@ window.removeUploadedSample = removeUploadedSample;
 window.removeKnowledgeImage = removeKnowledgeImage;
 window.selectKBItem = selectKBItem;
 window.showLobby = showLobby;
+
+// Expose new prompt menu functions globally
+window.toggleChatPromptMenu = toggleChatPromptMenu;
+window.editChatPrompt = editChatPrompt;
+window.cancelEditPrompt = cancelEditPrompt;
+window.saveEditedPrompt = saveEditedPrompt;
+window.saveChatPrompt = saveChatPrompt;
+window.renderSavedPromptsList = renderSavedPromptsList;
+window.deleteSavedPrompt = deleteSavedPrompt;
+window.useSavedPrompt = useSavedPrompt;
