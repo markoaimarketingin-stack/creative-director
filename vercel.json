@@ -1,16 +1,12 @@
 {
-  "version": 2,
-  "buildCommand": "echo \"Static frontend - no build needed\"",
+  "buildCommand": "",
   "outputDirectory": "frontend",
   "cleanUrls": true,
   "trailingSlash": false,
-  "routes": [
+  "rewrites": [
     {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/.*",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
