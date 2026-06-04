@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Response, HTTPException
+from fastapi import FastAPI, Response, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -80,15 +80,60 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def custom_groq_key_middleware(request, call_next):
-    from app.providers.groq_llm import custom_groq_key_var
-    custom_key = request.headers.get("x-custom-groq-key")
-    token = custom_groq_key_var.set(custom_key.strip() if custom_key and custom_key.strip() else None)
+async def custom_groq_key_middleware(request: Request, call_next):
+    from app.providers.groq_llm import (
+        custom_groq_key_var,
+        custom_gemini_key_var,
+        custom_hf_key_var,
+        custom_nanobanana_key_var,
+        custom_client_email_var,
+    )
+    from app.services.database import ChatDatabase
+    from app.core.config import get_settings
+
+    client_email = request.headers.get("x-client-email")
+    if not client_email:
+        client_email = request.query_params.get("client_email")
+
+    groq_key = None
+    gemini_key = None
+    hf_key = None
+    nanobanana_key = None
+
+    if client_email and client_email.strip():
+        try:
+            settings = get_settings()
+            chat_db = ChatDatabase(settings)
+            keys = chat_db.get_client_api_keys(client_email)
+            if keys:
+                groq_key = keys.get("groq_api_key")
+                gemini_key = keys.get("gemini_api_key")
+                hf_key = keys.get("hf_api_key")
+                nanobanana_key = keys.get("nanobanana_api_key")
+        except Exception:
+            pass
+
+    # Fallback to headers if database keys are not present
+    if not groq_key:
+        header_groq = request.headers.get("x-custom-groq-key")
+        if header_groq and header_groq.strip():
+            groq_key = header_groq.strip()
+
+    token_groq = custom_groq_key_var.set(groq_key)
+    token_gemini = custom_gemini_key_var.set(gemini_key)
+    token_hf = custom_hf_key_var.set(hf_key)
+    token_nanobanana = custom_nanobanana_key_var.set(nanobanana_key)
+    token_client_email = custom_client_email_var.set(client_email.strip() if client_email and client_email.strip() else None)
+
     try:
         response = await call_next(request)
         return response
     finally:
-        custom_groq_key_var.reset(token)
+        custom_groq_key_var.reset(token_groq)
+        custom_gemini_key_var.reset(token_gemini)
+        custom_hf_key_var.reset(token_hf)
+        custom_nanobanana_key_var.reset(token_nanobanana)
+        custom_client_email_var.reset(token_client_email)
 
 
 app.include_router(creatives_router)
@@ -101,10 +146,22 @@ app.include_router(execute_router)
 app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 
 @app.get("/output/{file_path:path}")
-async def serve_output_file(file_path: str):
+async def serve_output_file(file_path: str, request: Request, client_email: str | None = None):
     settings = get_settings()
     # Normalize path separator
     safe_path = file_path.replace("\\", "/")
+    
+    # Enforce multi-tenant access control for clients/ path
+    req_email = request.headers.get("x-client-email") or client_email
+    if req_email:
+        req_email = req_email.strip().lower()
+
+    parts = [p for p in safe_path.split("/") if p]
+    if parts and parts[0] == "clients" and len(parts) > 1:
+        owner_email = parts[1].strip().lower()
+        if req_email != owner_email:
+            raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this client's files")
+
     local_path = settings.output_root / safe_path
     
     if local_path.exists() and local_path.is_file():

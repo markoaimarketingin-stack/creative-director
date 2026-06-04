@@ -22,6 +22,12 @@ class HuggingFaceClient:
             limits=limits,
         )
 
+    @property
+    def api_key(self) -> str | None:
+        from app.providers.groq_llm import custom_hf_key_var
+        custom = custom_hf_key_var.get()
+        return custom if custom is not None else self._api_key
+
     def _get_url(self, model: str) -> str:
         return f"https://router.huggingface.co/hf-inference/models/{model}"
 
@@ -41,7 +47,7 @@ class HuggingFaceClient:
         *,
         sample_images: list[str] | None = None,
     ) -> GeneratedCreative:
-        if not self._api_key:
+        if not self.api_key:
             return GeneratedCreative(
                 concept_id=concept.concept_id,
                 provider="huggingface",
@@ -86,7 +92,7 @@ class HuggingFaceClient:
     ) -> GeneratedCreative | None:
         try:
             headers = {
-                "Authorization": f"Bearer {self._api_key}",
+                "Authorization": f"Bearer {self.api_key}",
                 "Accept": "*/*",
             }
             url = self._get_url(model)

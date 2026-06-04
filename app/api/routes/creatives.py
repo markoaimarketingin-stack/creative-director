@@ -123,7 +123,8 @@ async def api_score_and_package(
                                 filename=local_path.name,
                                 data=data,
                                 title=f"Generated: {c.headline or c.concept_id}",
-                                tags=["generation"]
+                                tags=["generation"],
+                                client_email=email
                             )
                         except Exception as e:
                             print(f"[WARN] Failed to save generated image to KB: {e}")
@@ -141,8 +142,10 @@ async def get_top_creatives(
     platform: Platform | None = None,
     current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
+    x_client_email: str | None = Header(None),
 ) -> TopCreativesResponse:
-    return engine.get_top_creatives(limit=limit, platform=platform)
+    email = current_user.get("username") or x_client_email
+    return engine.get_top_creatives(limit=limit, platform=platform, client_email=email)
 
 
 @router.get("/campaign-history", response_model=CampaignHistoryResponse)
@@ -164,12 +167,14 @@ async def upload_kb_image(
     tags: str | None = Form(None),
     current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
+    x_client_email: str | None = Header(None),
 ) -> dict:
     """Upload an image to the knowledge base."""
     try:
+        email = current_user.get("username") or x_client_email
         data = await file.read()
         tags_list = [t.strip() for t in tags.split(",")] if tags else None
-        entry = engine._storage.save_kb_image_from_bytes(file.filename, data, title=title, tags=tags_list)
+        entry = engine._storage.save_kb_image_from_bytes(file.filename, data, title=title, tags=tags_list, client_email=email)
         return entry
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -179,16 +184,21 @@ async def upload_kb_image(
 async def list_kb_images(
     current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
+    x_client_email: str | None = Header(None),
 ):
-    return {"items": engine._storage.list_kb_images()}
+    email = current_user.get("username") or x_client_email
+    return {"items": engine._storage.list_kb_images(client_email=email)}
+
 
 @router.delete("/knowledge-base/images/{image_id}")
 async def delete_kb_image(
     image_id: str,
     current_user: dict = Depends(get_current_user),
     engine: CreativeDirectorEngine = Depends(get_engine),
+    x_client_email: str | None = Header(None),
 ):
-    success = engine._storage.delete_kb_image(image_id)
+    email = current_user.get("username") or x_client_email
+    success = engine._storage.delete_kb_image(image_id, client_email=email)
     if not success:
         raise HTTPException(status_code=404, detail="Image not found")
     return {"success": True}

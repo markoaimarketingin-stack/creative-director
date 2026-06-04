@@ -4298,6 +4298,201 @@ button {
   font-size: 0.72rem;
   font-weight: 600;
   padding: 5px 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.chat-row.user .chat-prompt-menu-btn {
+  color: #52525b;
+}
+
+.chat-row.user .chat-prompt-menu-btn:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+  color: #000000;
+}
+
+.chat-prompt-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.chat-prompt-menu-dropdown.hidden {
+  display: none !important;
+}
+
+.chat-prompt-menu-item {
+  background: none;
+  border: none;
+  color: #e4e4e7;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  width: 100%;
+  font-family: inherit;
+}
+
+.chat-prompt-menu-item:hover {
+  background-color: #27272a;
+  color: #ffffff;
+}
+
+/* Inline Edit States */
+.chat-edit-textarea {
+  width: 100%;
+  min-height: 60px;
+  background: #f4f4f5 !important;
+  color: #09090b !important;
+  border: 1px solid #e4e4e7 !important;
+  border-radius: 6px !important;
+  padding: 8px !important;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  resize: vertical;
+  margin-bottom: 8px;
+  outline: none;
+}
+
+.chat-edit-textarea:focus {
+  border-color: #a1a1aa !important;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+}
+
+.chat-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.chat-edit-cancel-btn {
+  background: #e4e4e7;
+  color: #18181b;
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-edit-cancel-btn:hover {
+  background: #d4d4d8;
+}
+
+.chat-edit-save-btn {
+  background: #18181b;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-edit-save-btn:hover {
+  background: #09090b;
+}
+
+/* Saved Prompts Panel and List Items */
+#chat-saved-prompts-panel {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.saved-prompt-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(24, 24, 27, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.saved-prompt-item:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  background-color: rgba(32, 32, 36, 0.98);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(99, 102, 241, 0.15);
+}
+
+.saved-prompt-text {
+  font-size: 0.82rem;
+  color: #e4e4e7;
+  line-height: 1.45;
+  text-align: left;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-height: 4.35em;
+  font-weight: 450;
+}
+
+.saved-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+}
+
+.saved-prompt-use-btn {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #ffffff;
+  border: none;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.2);
+}
+
+.saved-prompt-use-btn:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 8px rgba(99, 102, 241, 0.35);
+  transform: translateY(-1px);
+}
+
+.saved-prompt-use-btn:active {
+  transform: translateY(0);
+}
+
+.saved-prompt-delete-btn {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 12px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -4307,4 +4502,61 @@ button {
   background: #ef4444;
   color: #ffffff;
   border-color: #ef4444;
+}
+
+/* Reels Script Director Premium Styling */
+.reels-phone-mockup {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.reels-phone-mockup:hover {
+  border-color: #3f3f46 !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+.mockup-screen {
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.9);
+}
+
+/* Modal styling for Reels Publication */
+.reels-modal {
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.reels-modal-content {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: rgba(9, 9, 11, 0.95) !important;
+}
+
+/* SVG Chart retention stroke animation */
+#retention-stroke {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  animation: drawStroke 2s forwards ease-in-out;
+}
+
+@keyframes drawStroke {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Dynamic styling for mockup video play click */
+#mock-video-bg svg:hover {
+  transform: scale(1.1) rotate(5deg);
+  color: #e11d48 !important;
 }

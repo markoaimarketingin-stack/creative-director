@@ -34,8 +34,37 @@ class CampaignStorage:
         from app.core.supabase import DatabasePool
         self._pool = DatabasePool(settings)
 
-    def save_package(self, package: CampaignPackage) -> str:
-        campaign_dir = self.build_campaign_dir(package.campaign_slug, package.created_at)
+    def _client_dir(self, client_email: str | None) -> Path:
+        email = client_email
+        if not email:
+            from app.providers.groq_llm import custom_client_email_var
+            email = custom_client_email_var.get()
+        if not email:
+            return self._output_root
+        return self._output_root / "clients" / email.lower().strip()
+
+    def _client_kb_root(self, client_email: str | None) -> Path:
+        email = client_email
+        if not email:
+            from app.providers.groq_llm import custom_client_email_var
+            email = custom_client_email_var.get()
+        root = self._client_dir(email)
+        kb_root = root / "knowledge_base"
+        kb_root.mkdir(parents=True, exist_ok=True)
+        return kb_root
+
+    def _client_instagram_root(self, client_email: str | None) -> Path:
+        email = client_email
+        if not email:
+            from app.providers.groq_llm import custom_client_email_var
+            email = custom_client_email_var.get()
+        kb_root = self._client_kb_root(email)
+        instagram_root = kb_root / "instagram"
+        instagram_root.mkdir(parents=True, exist_ok=True)
+        return instagram_root
+
+    def save_package(self, package: CampaignPackage, client_email: str | None = None) -> str:
+        campaign_dir = self.build_campaign_dir(package.campaign_slug, package.created_at, client_email)
 
         payloads = {
             "input.json": package.input.model_dump(mode="json"),
@@ -66,9 +95,10 @@ class CampaignStorage:
 
         return str(campaign_dir)
 
-    def build_campaign_dir(self, campaign_slug: str, created_at) -> Path:
+    def build_campaign_dir(self, campaign_slug: str, created_at, client_email: str | None = None) -> Path:
         timestamp = created_at.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-        campaign_dir = self._output_root / campaign_slug / timestamp
+        client_dir = self._client_dir(client_email)
+        campaign_dir = client_dir / campaign_slug / timestamp
         campaign_dir.mkdir(parents=True, exist_ok=True)
         return campaign_dir
 
@@ -77,10 +107,19 @@ class CampaignStorage:
         *,
         limit: int | None = None,
         platform: Platform | None = None,
+        client_email: str | None = None,
     ) -> TopCreativesResponse:
         items: list[tuple[datetime, int, TopCreativeItem]] = []
 
-        for creatives_file in self._output_root.glob("*/*/creatives.json"):
+        search_root = self._client_dir(client_email)
+        for creatives_file in search_root.glob("*/*/creatives.json"):
+            if not client_email:
+                try:
+                    rel = creatives_file.relative_to(self._output_root)
+                    if rel.parts and rel.parts[0] == "clients":
+                        continue
+                except Exception:
+                    pass
             try:
                 rows = json.loads(creatives_file.read_text(encoding="utf-8"))
             except Exception:
@@ -134,12 +173,21 @@ class CampaignStorage:
         *,
         limit: int | None = None,
         platform: Platform | None = None,
+        client_email: str | None = None,
     ) -> CampaignHistoryResponse:
         """Get campaign-level history grouped by campaign_slug with all creatives from all runs."""
         campaign_data: dict[str, dict] = {}
 
+        search_root = self._client_dir(client_email)
         # Find all campaign manifest files
-        for manifest_file in self._output_root.glob("*/*/campaign_manifest.json"):
+        for manifest_file in search_root.glob("*/*/campaign_manifest.json"):
+            if not client_email:
+                try:
+                    rel = manifest_file.relative_to(self._output_root)
+                    if rel.parts and rel.parts[0] == "clients":
+                        continue
+                except Exception:
+                    pass
             campaign_dir = manifest_file.parent
             try:
                 manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
@@ -243,7 +291,6 @@ class CampaignStorage:
             pass
         return default if default is not None else []
 
-
     def _normalize_web_path(self, path_str: str | None) -> str | None:
         if not path_str:
             return None
@@ -275,19 +322,20 @@ class CampaignStorage:
         return Platform.META
 
     # Knowledge base helpers
-    def save_kb_image_from_bytes(self, filename: str, data: bytes, title: str | None = None, tags: list[str] | None = None) -> dict:
+    def save_kb_image_from_bytes(self, filename: str, data: bytes, title: str | None = None, tags: list[str] | None = None, client_email: str | None = None) -> dict:
         """Save a knowledge-base image and record metadata, with duplicate detection."""
         from hashlib import sha256
         
         # Calculate content hash to detect duplicates
         content_hash = sha256(data).hexdigest()
         
+        kb_root = self._client_kb_root(client_email)
         # Check if image with same content already exists
-        meta_path = self._kb_root / "metadata.json"
+        meta_path = kb_root / "metadata.json"
         try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except Exception:
-            meta = []
+             meta = []
         
         # Look for existing entry with same content hash
         for existing_entry in meta:
@@ -303,7 +351,7 @@ class CampaignStorage:
         # New image - save it
         ts = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
         safe_name = f"{ts}-{filename}".replace(" ", "_")
-        path = self._kb_root / safe_name
+        path = kb_root / safe_name
         path.write_bytes(data)
 
         web_path = f"/output/{path.relative_to(self._output_root).as_posix()}"
@@ -336,15 +384,17 @@ class CampaignStorage:
 
         return entry
 
-    def list_kb_images(self) -> list[dict]:
-        meta_path = self._kb_root / "metadata.json"
+    def list_kb_images(self, client_email: str | None = None) -> list[dict]:
+        kb_root = self._client_kb_root(client_email)
+        meta_path = kb_root / "metadata.json"
         try:
             return json.loads(meta_path.read_text(encoding="utf-8"))
         except Exception:
             return []
 
-    def delete_kb_image(self, image_id: str) -> bool:
-        meta_path = self._kb_root / "metadata.json"
+    def delete_kb_image(self, image_id: str, client_email: str | None = None) -> bool:
+        kb_root = self._client_kb_root(client_email)
+        meta_path = kb_root / "metadata.json"
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except Exception:
@@ -357,7 +407,8 @@ class CampaignStorage:
                 found = True
                 filename = entry.get("filename")
                 if filename:
-                    file_path = self._kb_root / filename
+                    file_path = kb_root / filename
+                     
                     if file_path.exists():
                         try:
                             file_path.unlink()
@@ -428,41 +479,41 @@ class CampaignStorage:
                 except Exception as e:
                     logger.error(f"Failed to sync file {p} to DB: {e}")
 
-    def load_instagram_trend_memory(self) -> list[dict]:
-        return self._read_json(self._instagram_root / "trend_memory.json", [])
+    def load_instagram_trend_memory(self, client_email: str | None = None) -> list[dict]:
+        return self._read_json(self._client_instagram_root(client_email) / "trend_memory.json", [])
 
-    def save_instagram_trend_memory(self, trends: list[dict]) -> None:
-        self._write_json(self._instagram_root / "trend_memory.json", trends)
+    def save_instagram_trend_memory(self, trends: list[dict], client_email: str | None = None) -> None:
+        self._write_json(self._client_instagram_root(client_email) / "trend_memory.json", trends)
 
-    def load_instagram_hook_library(self) -> list[dict]:
-        return self._read_json(self._instagram_root / "hook_library.json", [])
+    def load_instagram_hook_library(self, client_email: str | None = None) -> list[dict]:
+        return self._read_json(self._client_instagram_root(client_email) / "hook_library.json", [])
 
-    def save_instagram_hook_library(self, hooks: list[dict]) -> None:
-        self._write_json(self._instagram_root / "hook_library.json", hooks)
+    def save_instagram_hook_library(self, hooks: list[dict], client_email: str | None = None) -> None:
+        self._write_json(self._client_instagram_root(client_email) / "hook_library.json", hooks)
 
-    def load_instagram_analysis_memory(self) -> list[dict]:
-        return self._read_json(self._instagram_root / "analysis_memory.json", [])
+    def load_instagram_analysis_memory(self, client_email: str | None = None) -> list[dict]:
+        return self._read_json(self._client_instagram_root(client_email) / "analysis_memory.json", [])
 
-    def save_instagram_analysis_memory(self, rows: list[dict]) -> None:
-        self._write_json(self._instagram_root / "analysis_memory.json", rows)
+    def save_instagram_analysis_memory(self, rows: list[dict], client_email: str | None = None) -> None:
+        self._write_json(self._client_instagram_root(client_email) / "analysis_memory.json", rows)
 
-    def load_instagram_trend_snapshots(self) -> list[dict]:
-        return self._read_json(self._instagram_root / "trend_snapshots.json", [])
+    def load_instagram_trend_snapshots(self, client_email: str | None = None) -> list[dict]:
+        return self._read_json(self._client_instagram_root(client_email) / "trend_snapshots.json", [])
 
-    def save_instagram_trend_snapshots(self, rows: list[dict]) -> None:
-        self._write_json(self._instagram_root / "trend_snapshots.json", rows)
+    def save_instagram_trend_snapshots(self, rows: list[dict], client_email: str | None = None) -> None:
+        self._write_json(self._client_instagram_root(client_email) / "trend_snapshots.json", rows)
 
-    def load_instagram_competitor_benchmarks(self) -> list[dict]:
-        return self._read_json(self._instagram_root / "competitor_benchmarks.json", [])
+    def load_instagram_competitor_benchmarks(self, client_email: str | None = None) -> list[dict]:
+        return self._read_json(self._client_instagram_root(client_email) / "competitor_benchmarks.json", [])
 
-    def save_instagram_competitor_benchmarks(self, rows: list[dict]) -> None:
-        self._write_json(self._instagram_root / "competitor_benchmarks.json", rows)
+    def save_instagram_competitor_benchmarks(self, rows: list[dict], client_email: str | None = None) -> None:
+        self._write_json(self._client_instagram_root(client_email) / "competitor_benchmarks.json", rows)
 
-    def load_instagram_reel_library(self) -> list[dict]:
-        return self._read_json(self._instagram_root / "reel_library.json", [])
+    def load_instagram_reel_library(self, client_email: str | None = None) -> list[dict]:
+        return self._read_json(self._client_instagram_root(client_email) / "reel_library.json", [])
 
-    def save_instagram_reel_library(self, rows: list[dict]) -> None:
-        self._write_json(self._instagram_root / "reel_library.json", rows)
+    def save_instagram_reel_library(self, rows: list[dict], client_email: str | None = None) -> None:
+        self._write_json(self._client_instagram_root(client_email) / "reel_library.json", rows)
 
     def _read_json(self, path: Path, default: Any) -> Any:
         try:

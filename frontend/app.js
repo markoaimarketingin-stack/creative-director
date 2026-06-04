@@ -23,7 +23,30 @@ function decodeJwt(token) {
 
 // --- postMessage Token Receiver ---
 const SUPERVISOR_ORIGIN = "https://marko-supervisor.vercel.app";
-let accessToken = sessionStorage.getItem("markoIframeAuthToken") || "";
+let accessToken = localStorage.getItem("markoIframeAuthToken") || "";
+
+async function loadClientApiKeys() {
+  const authEmail = localStorage.getItem("auth_email");
+  const isGuest = localStorage.getItem("is_guest");
+  if (!authEmail || isGuest === "true") return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/providers/keys`);
+    if (res.ok) {
+      const data = await res.json();
+      const groqKey = data.groq_api_key;
+      if (groqKey) {
+        localStorage.setItem("custom_api_key", groqKey);
+        const chatCustomApiKey = document.getElementById("chat-custom-api-key");
+        if (chatCustomApiKey) {
+          chatCustomApiKey.value = groqKey;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Settings] Failed to fetch client API keys:", err);
+  }
+}
 
 window.addEventListener("message", (event) => {
   // Validate origin (allow supervisor domain, or own origin during local development)
@@ -33,7 +56,7 @@ window.addEventListener("message", (event) => {
   if (event.data?.type === "MARKO_AUTH_TOKEN" && event.data?.token) {
     const token = event.data.token;
     accessToken = token;
-    sessionStorage.setItem("markoIframeAuthToken", token);
+    localStorage.setItem("markoIframeAuthToken", token);
     console.log("[Auth] Token successfully received and updated via postMessage");
     
     // Decode token and set user info
@@ -63,6 +86,9 @@ window.addEventListener("message", (event) => {
         avatarEl.textContent = displayLetter;
       }
 
+      // Load client keys
+      loadClientApiKeys();
+
       // Reload to pull new session data if the user changed
       if (prevEmail !== email) {
         window.location.reload();
@@ -82,7 +108,7 @@ window.fetch = async function () {
   const isGuest = localStorage.getItem("is_guest");
   const customProvider = localStorage.getItem("custom_provider") || "default";
   const customApiKey = localStorage.getItem("custom_api_key");
-  const token = sessionStorage.getItem("markoIframeAuthToken") || accessToken;
+  const token = localStorage.getItem("markoIframeAuthToken") || accessToken;
   
   if (config.headers instanceof Headers) {
     if (token) config.headers.append("Authorization", `Bearer ${token}`);
@@ -115,6 +141,7 @@ document.addEventListener("DOMContentLoaded", () => {
     overlay.style.display = "flex";
   } else {
     overlay.style.display = "none";
+    loadClientApiKeys();
   }
 
   // --- Model Settings Panel Logic ---
@@ -172,12 +199,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Save changes
   if (btnChatSettingsSave && chatProviderSelect && chatCustomApiKey) {
-    btnChatSettingsSave.addEventListener("click", () => {
+    btnChatSettingsSave.addEventListener("click", async () => {
       const providerVal = chatProviderSelect.value;
       const keyVal = chatCustomApiKey.value.trim();
       
       localStorage.setItem("custom_provider", providerVal);
       localStorage.setItem("custom_api_key", keyVal);
+      
+      const authEmail = localStorage.getItem("auth_email");
+      const isGuest = localStorage.getItem("is_guest");
+      
+      if (authEmail && isGuest !== "true" && providerVal === "groq") {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/providers/keys`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              groq_api_key: keyVal
+            })
+          });
+          if (!res.ok) {
+            console.error("[Settings] Failed to save client API keys to database");
+          }
+        } catch (err) {
+          console.error("[Settings] Error saving client API keys to database:", err);
+        }
+      }
       
       if (chatSettingsPanel) chatSettingsPanel.classList.add("hidden");
       
@@ -819,7 +868,12 @@ function toPublicAssetUrl(rawPath) {
     }
   }
 
-  return `${API_BASE_URL}/output/${relative.replace(/^\/+/, "")}`;
+  const authEmail = localStorage.getItem("auth_email");
+  let url = `${API_BASE_URL}/output/${relative.replace(/^\/+/, "")}`;
+  if (authEmail) {
+    url += (url.includes("?") ? "&" : "?") + "client_email=" + encodeURIComponent(authEmail);
+  }
+  return url;
 }
 
 function showLobby() {
@@ -4138,8 +4192,21 @@ function runReelsAnalyze() {
   btn.textContent = "Analyzing...";
   btn.disabled = true;
   
+  // Clear success messages
+  const successMsg = document.getElementById("publishing-success-message");
+  if (successMsg) successMsg.classList.add("hidden");
+  
   // Clear output visibility during analysis
   document.getElementById("reels-analyze-output").classList.add("hidden");
+
+  // Pause video player if playing
+  const player = document.getElementById("mock-video-player");
+  const bg = document.getElementById("mock-video-bg");
+  if (player && bg) {
+    player.pause();
+    player.style.display = "none";
+    bg.style.display = "flex";
+  }
   
   // Simulate network delay
   setTimeout(() => {
@@ -4147,19 +4214,122 @@ function runReelsAnalyze() {
     const url = urlInput ? urlInput.value.trim() : "";
     const file = (fileInput && fileInput.files && fileInput.files[0]) ? fileInput.files[0].name : "";
 
+    // Set mockup variables based on source
+    let captionText = "";
+    let publishDate = new Date().toLocaleDateString("en-US", { year: 'numeric', month: 'long', day: 'numeric' });
+    let durationText = "15 seconds";
+    let viewsNum = 0;
+    let likesNum = 0;
+    let commentsNum = 0;
+    let sharesNum = 0;
+    let engRate = 0;
+    let avgWatch = 0;
+    let retentionPath = "M0,0 Q15,40 50,60 T100,85 L100,100 L0,100 Z";
+    let retentionStroke = "M0,0 Q15,40 50,60 T100,85";
+
     if (url) {
       subjectText = `Breakdown generated for URL: <a href="${url}" target="_blank" style="color: #ffffff; text-decoration: underline; font-weight: 600;">${url.substring(0, 45)}${url.length > 45 ? '...' : ''}</a>`;
+      
+      // Parse custom details based on URL keyword
+      if (url.toLowerCase().includes("growth") || url.toLowerCase().includes("e1")) {
+        captionText = "Struggling to grow on Instagram? Here is the exact daily process I use to gain 10k followers per month! 📈🚀 #growthmindset #instagramgrowth #socialmediatips";
+        durationText = "15 seconds";
+        viewsNum = 852400;
+        likesNum = 64200;
+        commentsNum = 1840;
+        sharesNum = 12900;
+        avgWatch = 11.8;
+        // Good retention curve
+        retentionPath = "M0,0 Q10,15 35,25 T100,45 L100,100 L0,100 Z";
+        retentionStroke = "M0,0 Q10,15 35,25 T100,45";
+      } else if (url.toLowerCase().includes("promo") || url.toLowerCase().includes("saas")) {
+        captionText = "Meet Marko AI — the first AI-agent supervisor that auto-generates multi-channel ad packages in under 2 minutes. 🎥💻 #saas #aiart #marketingagency";
+        durationText = "30 seconds";
+        viewsNum = 145000;
+        likesNum = 9200;
+        commentsNum = 420;
+        sharesNum = 1150;
+        avgWatch = 18.5;
+        // Moderate retention curve
+        retentionPath = "M0,0 Q20,35 60,65 T100,80 L100,100 L0,100 Z";
+        retentionStroke = "M0,0 Q20,35 60,65 T100,80";
+      } else {
+        captionText = "Stop writing boring copy! Use these 3 psychological triggers to double your conversions today. 🧠🔥 #copywriting #salesfunnel #marketing101";
+        durationText = "20 seconds";
+        viewsNum = 428000;
+        likesNum = 31200;
+        commentsNum = 980;
+        sharesNum = 5400;
+        avgWatch = 14.2;
+        retentionPath = "M0,0 Q15,25 50,45 T100,65 L100,100 L0,100 Z";
+        retentionStroke = "M0,0 Q15,25 50,45 T100,65";
+      }
     } else if (file) {
       subjectText = `Breakdown generated for uploaded file: <strong style="color: #ffffff; font-weight: 600;">${file}</strong>`;
+      captionText = `Quick tutorial on testing video hooks using the ${file} sample assets! 🎬🔥 #videotips #contentcreator #hooks`;
+      durationText = "12 seconds";
+      viewsNum = 52000;
+      likesNum = 4100;
+      commentsNum = 150;
+      sharesNum = 620;
+      avgWatch = 9.4;
+      retentionPath = "M0,0 Q10,20 40,30 T100,50 L100,100 L0,100 Z";
+      retentionStroke = "M0,0 Q10,20 40,30 T100,50";
     } else {
       subjectText = `Breakdown generated for demo reference reel.`;
+      captionText = "Why copying competitors is keeping you broke (and what to do instead) 🤫💡 #socialmedia #businesshacks #entrepreneur";
+      durationText = "15 seconds";
+      viewsNum = 320000;
+      likesNum = 24000;
+      commentsNum = 740;
+      sharesNum = 3800;
+      avgWatch = 11.2;
+      retentionPath = "M0,0 Q15,40 50,60 T100,85 L100,100 L0,100 Z";
+      retentionStroke = "M0,0 Q15,40 50,60 T100,85";
     }
+
+    // Calculate Engagement Rate
+    engRate = ((likesNum + commentsNum + sharesNum) / viewsNum * 100).toFixed(2);
+
+    // Update UI elements
+    const capOverlay = document.getElementById("mockup-caption-overlay");
+    const capDetail = document.getElementById("reels-detail-caption");
+    const dateDetail = document.getElementById("reels-detail-date");
+    const durDetail = document.getElementById("reels-detail-duration");
+    const viewsEl = document.getElementById("anal-views");
+    const likesEl = document.getElementById("anal-likes");
+    const commsEl = document.getElementById("anal-comments");
+    const sharesEl = document.getElementById("anal-shares");
+    const engEl = document.getElementById("anal-engagement");
+    const watchText = document.getElementById("average-watchtime-text");
+    const rPath = document.getElementById("retention-path");
+    const rStroke = document.getElementById("retention-stroke");
+    const mockDur = document.getElementById("mock-video-duration");
+
+    if (capOverlay) capOverlay.textContent = captionText;
+    if (capDetail) capDetail.textContent = captionText;
+    if (dateDetail) dateDetail.textContent = publishDate;
+    if (durDetail) durDetail.textContent = durationText;
+    if (mockDur) mockDur.textContent = `0:00 / 0:${durationText.split(" ")[0]}`;
+    
+    if (viewsEl) viewsEl.textContent = viewsNum >= 1000 ? (viewsNum / 1000).toFixed(1) + "K" : viewsNum;
+    if (likesEl) likesEl.textContent = likesNum >= 1000 ? (likesNum / 1000).toFixed(1) + "K" : likesNum;
+    if (commsEl) commsEl.textContent = commentsNum >= 1000 ? (commentsNum / 1000).toFixed(1) + "K" : commentsNum;
+    if (sharesEl) sharesEl.textContent = sharesNum >= 1000 ? (sharesNum / 1000).toFixed(1) + "K" : sharesNum;
+    if (engEl) engEl.textContent = engRate + "%";
+    if (watchText) watchText.textContent = `Avg Watch Time: ${avgWatch}s`;
+    
+    if (rPath) rPath.setAttribute("d", retentionPath);
+    if (rStroke) rStroke.setAttribute("d", retentionStroke);
 
     if (subjectDisplay) subjectDisplay.innerHTML = subjectText;
 
     document.getElementById("reels-analyze-output").classList.remove("hidden");
     btn.textContent = "Analyze Reel";
     btn.disabled = false;
+    
+    // Increment Reels tab counter
+    setCount("reels", 1);
   }, 1500);
 }
 
@@ -4549,3 +4719,114 @@ window.saveChatPrompt = saveChatPrompt;
 window.renderSavedPromptsList = renderSavedPromptsList;
 window.deleteSavedPrompt = deleteSavedPrompt;
 window.useSavedPrompt = useSavedPrompt;
+
+// Reels Script Director Helper Functions
+function fillSampleReelUrl(url) {
+  const urlInput = document.getElementById("reels-analyze-url");
+  if (urlInput) {
+    urlInput.value = url;
+  }
+}
+
+function toggleMockVideoPlay() {
+  const player = document.getElementById("mock-video-player");
+  const bg = document.getElementById("mock-video-bg");
+  if (!player || !bg) return;
+  if (player.paused) {
+    player.style.display = "block";
+    bg.style.display = "none";
+    player.play();
+  } else {
+    player.pause();
+    player.style.display = "none";
+    bg.style.display = "flex";
+  }
+}
+
+function downloadMockReelVideo() {
+  const link = document.createElement("a");
+  link.href = "https://assets.mixkit.co/videos/preview/mixkit-holding-a-smartphone-showing-a-social-network-app-41586-large.mp4";
+  link.download = "marko_ai_instagram_reel.mp4";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToastNotification("Downloading Reel video file...");
+}
+
+function openPostReelModal() {
+  const modal = document.getElementById("post-reel-modal");
+  const captionInput = document.getElementById("post-reel-caption");
+  const currentCaption = document.getElementById("reels-detail-caption");
+  
+  if (captionInput && currentCaption) {
+    captionInput.value = currentCaption.textContent;
+  }
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+}
+
+function closePostReelModal() {
+  const modal = document.getElementById("post-reel-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+function togglePostReelSchedule(show) {
+  const wrap = document.getElementById("post-reel-schedule-time-wrap");
+  const btn = document.getElementById("btn-confirm-post-reel");
+  if (wrap) {
+    if (show) {
+      wrap.classList.remove("hidden");
+      if (btn) btn.textContent = "Schedule Post";
+    } else {
+      wrap.classList.add("hidden");
+      if (btn) btn.textContent = "Publish Now";
+    }
+  }
+}
+
+function executePostReel() {
+  const btn = document.getElementById("btn-confirm-post-reel");
+  const account = document.getElementById("post-reel-account").value;
+  const scheduleType = document.querySelector('input[name="post-reel-schedule-type"]:checked').value;
+  const time = document.getElementById("post-reel-schedule-time").value;
+  
+  if (btn) {
+    btn.textContent = scheduleType === "later" ? "Scheduling..." : "Publishing...";
+    btn.disabled = true;
+  }
+  
+  setTimeout(() => {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = scheduleType === "later" ? "Schedule Post" : "Publish Now";
+    }
+    closePostReelModal();
+    
+    const successMsg = document.getElementById("publishing-success-message");
+    const successDetails = document.getElementById("publishing-success-details");
+    
+    if (successMsg && successDetails) {
+      successMsg.classList.remove("hidden");
+      if (scheduleType === "later") {
+        const formattedTime = time ? new Date(time).toLocaleString() : "scheduled date";
+        successDetails.textContent = `Reel scheduled successfully for ${formattedTime} to @${account}.`;
+      } else {
+        successDetails.textContent = `Reel successfully posted to @${account}.`;
+      }
+    }
+    showToastNotification("Reel published successfully!");
+  }, 1800);
+}
+
+// Expose to window
+window.fillSampleReelUrl = fillSampleReelUrl;
+window.toggleMockVideoPlay = toggleMockVideoPlay;
+window.downloadMockReelVideo = downloadMockReelVideo;
+window.openPostReelModal = openPostReelModal;
+window.closePostReelModal = closePostReelModal;
+window.togglePostReelSchedule = togglePostReelSchedule;
+window.executePostReel = executePostReel;
+

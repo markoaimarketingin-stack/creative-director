@@ -160,17 +160,43 @@ class ChatDatabase(BaseDatabase):
                 """
                 CREATE TABLE IF NOT EXISTS allowed_users (
                     email VARCHAR(255) PRIMARY KEY,
+                    password VARCHAR(255),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            # Ensure password column exists if table was created previously without it
+            cur.execute(
+                """
+                ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS password VARCHAR(255);
+                """
+            )
+
+            # Create client_api_keys table
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS client_api_keys (
+                    client_email VARCHAR(255) PRIMARY KEY,
+                    groq_api_key TEXT,
+                    gemini_api_key TEXT,
+                    hf_api_key TEXT,
+                    nanobanana_api_key TEXT,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 );
                 """
             )
 
-            # Pre-populate allowed_users table with default active emails
+            # Pre-populate allowed_users table with default active emails and hashed "password123"
+            import hashlib
+            default_pw = hashlib.sha256("password123".encode("utf-8")).hexdigest()
             default_emails = ["harshdwivedihd360@gmail.com", "markoaiqa@gmail.com", "guest@marko.ai"]
             for email in default_emails:
                 cur.execute(
-                    "INSERT INTO allowed_users (email) VALUES (%s) ON CONFLICT (email) DO NOTHING;",
-                    (email,)
+                    """
+                    INSERT INTO allowed_users (email, password) VALUES (%s, %s)
+                    ON CONFLICT (email) DO UPDATE SET password = COALESCE(allowed_users.password, EXCLUDED.password);
+                    """,
+                    (email, default_pw)
                 )
 
     def is_email_allowed(self, email: str) -> bool:
@@ -179,6 +205,64 @@ class ChatDatabase(BaseDatabase):
                 return False
             cur.execute("SELECT 1 FROM allowed_users WHERE email = %s;", (email.lower().strip(),))
             return cur.fetchone() is not None
+
+    def verify_email_password(self, email: str, password: str | None) -> bool:
+        with self._cursor() as cur:
+            if cur is None:
+                return False
+            cur.execute("SELECT password FROM allowed_users WHERE email = %s;", (email.lower().strip(),))
+            row = cur.fetchone()
+            if not row:
+                return False
+            db_password = row[0]
+            if not db_password:
+                return True
+            if not password:
+                return False
+            import hashlib
+            hashed_pwd = hashlib.sha256(password.encode("utf-8")).hexdigest()
+            return db_password == password or db_password == hashed_pwd
+
+    def get_client_api_keys(self, client_email: str) -> dict[str, str | None]:
+        with self._cursor() as cur:
+            if cur is None:
+                return {}
+            cur.execute(
+                "SELECT groq_api_key, gemini_api_key, hf_api_key, nanobanana_api_key FROM client_api_keys WHERE client_email = %s;",
+                (client_email.lower().strip(),)
+            )
+            row = cur.fetchone()
+            if row:
+                return {
+                    "groq_api_key": row[0],
+                    "gemini_api_key": row[1],
+                    "hf_api_key": row[2],
+                    "nanobanana_api_key": row[3]
+                }
+            return {}
+
+    def save_client_api_keys(self, client_email: str, groq_key: str | None = None, gemini_key: str | None = None, hf_key: str | None = None, nanobanana_key: str | None = None) -> None:
+        with self._cursor() as cur:
+            if cur is None:
+                return
+            email = client_email.lower().strip()
+            g_key = groq_key.strip() if groq_key and groq_key.strip() else None
+            gm_key = gemini_key.strip() if gemini_key and gemini_key.strip() else None
+            h_key = hf_key.strip() if hf_key and hf_key.strip() else None
+            n_key = nanobanana_key.strip() if nanobanana_key and nanobanana_key.strip() else None
+
+            cur.execute(
+                """
+                INSERT INTO client_api_keys (client_email, groq_api_key, gemini_api_key, hf_api_key, nanobanana_api_key)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (client_email) DO UPDATE SET
+                    groq_api_key = EXCLUDED.groq_api_key,
+                    gemini_api_key = EXCLUDED.gemini_api_key,
+                    hf_api_key = EXCLUDED.hf_api_key,
+                    nanobanana_api_key = EXCLUDED.nanobanana_api_key;
+                """,
+                (email, g_key, gm_key, h_key, n_key)
+            )
 
     def save_message(self, session_id: str, role: str, content: str, client_email: str | None = None, is_guest: bool = False) -> None:
         # Allow guest session recording for offline / local evaluation
@@ -251,7 +335,7 @@ class ChatDatabase(BaseDatabase):
             return [{"session_id": row[0], "last_activity": row[1].isoformat(), "title": row[2]} for row in cur.fetchall()]
 
     def save_knowledge_base_item(self, session_id: str, file_name: str, file_type: str, file_path: str, 
-                                 file_content: str | None = None, metadata: dict | None = None, is_guest: bool = False) -> str | None:
+                                 file_content: str | None = None, metadata: dict | None = None, is_guest: bool = False, client_email: str | None = None) -> str | None:
         # Allow guest session recording for offline / local evaluation
         # if is_guest:
         #     return None
@@ -259,6 +343,10 @@ class ChatDatabase(BaseDatabase):
         with self._cursor() as cur:
             if cur is None:
                 return None
+            if client_email:
+                cur.execute("SELECT id FROM chat_sessions WHERE id = %s AND client_email = %s", (session_id, client_email))
+                if not cur.fetchone():
+                    return None
             try:
                 cur.execute(
                     """
@@ -274,11 +362,15 @@ class ChatDatabase(BaseDatabase):
                 logger.exception("Error saving knowledge base item: %s", exc)
                 return None
 
-    def get_knowledge_base(self, session_id: str) -> list[dict]:
+    def get_knowledge_base(self, session_id: str, client_email: str | None = None) -> list[dict]:
         """Retrieve all knowledge base items for a session."""
         with self._cursor() as cur:
             if cur is None:
                 return []
+            if client_email:
+                cur.execute("SELECT id FROM chat_sessions WHERE id = %s AND client_email = %s", (session_id, client_email))
+                if not cur.fetchone():
+                    return []
             try:
                 cur.execute(
                     """
@@ -305,8 +397,8 @@ class ChatDatabase(BaseDatabase):
                 return []
 
     def save_execution_history(self, session_id: str, campaign_name: str, execution_type: str, 
-                              input_data: dict, output_data: dict | None = None, status: str = "success",
-                              error_message: str | None = None, execution_time_ms: int = 0, is_guest: bool = False) -> str | None:
+                               input_data: dict, output_data: dict | None = None, status: str = "success",
+                               error_message: str | None = None, execution_time_ms: int = 0, is_guest: bool = False, client_email: str | None = None) -> str | None:
         # Allow guest session recording for offline / local evaluation
         # if is_guest:
         #     return None
@@ -314,6 +406,10 @@ class ChatDatabase(BaseDatabase):
         with self._cursor() as cur:
             if cur is None:
                 return None
+            if client_email:
+                cur.execute("SELECT id FROM chat_sessions WHERE id = %s AND client_email = %s", (session_id, client_email))
+                if not cur.fetchone():
+                    return None
             try:
                 cur.execute(
                     """
@@ -331,11 +427,15 @@ class ChatDatabase(BaseDatabase):
                 logger.exception("Error saving execution history: %s", exc)
                 return None
 
-    def get_execution_history(self, session_id: str, limit: int = 50) -> list[dict]:
+    def get_execution_history(self, session_id: str, limit: int = 50, client_email: str | None = None) -> list[dict]:
         """Retrieve execution history for a session."""
         with self._cursor() as cur:
             if cur is None:
                 return []
+            if client_email:
+                cur.execute("SELECT id FROM chat_sessions WHERE id = %s AND client_email = %s", (session_id, client_email))
+                if not cur.fetchone():
+                    return []
             try:
                 cur.execute(
                     """
@@ -633,17 +733,20 @@ class CampaignDatabase(BaseDatabase):
                 logger.exception("Database fetch error: %s", exc)
                 return CampaignHistoryResponse(items=[])
 
-    def get_top_creatives(self, limit: int | None = None, platform: Platform | None = None) -> TopCreativesResponse:
+    def get_top_creatives(self, limit: int | None = None, platform: Platform | None = None, client_email: str | None = None) -> TopCreativesResponse:
         with self._cursor() as cur:
             if cur is None:
                 return TopCreativesResponse(items=[])
             
             try:
-                query = "SELECT campaign_name, campaign_slug, platform, creative_assets FROM creative_campaigns"
+                query = "SELECT campaign_name, campaign_slug, platform, creative_assets FROM creative_campaigns WHERE 1=1"
                 params = []
                 if platform:
-                    query += " WHERE platform = %s "
+                    query += " AND platform = %s "
                     params.append(platform.value)
+                if client_email:
+                    query += " AND client_email = %s "
+                    params.append(client_email)
                 
                 cur.execute(query, tuple(params))
                 

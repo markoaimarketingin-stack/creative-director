@@ -22,6 +22,7 @@ class EmailAuthRequest(BaseModel):
 
 class AllowedEmailRequest(BaseModel):
     email: str
+    password: str | None = None
 
 
 @router.post("/google")
@@ -81,14 +82,14 @@ async def email_login(request: EmailAuthRequest):
     email_lower = request.email.lower().strip()
 
     chat_db = ChatDatabase(settings)
-    if not chat_db.is_email_allowed(email_lower):
+    if not chat_db.verify_email_password(email_lower, request.password):
         log.warning(f"Access denied: Email login attempt for '{email_lower}' rejected.")
         raise HTTPException(
             status_code=403,
-            detail=f"Access denied: Email '{request.email}' is not registered in the system."
+            detail="Access denied: Invalid email or password."
         )
 
-    log.info(f"Successful email login check for user: {email_lower}")
+    log.info(f"Successful email login for user: {email_lower}")
     return {
         "email": email_lower,
         "name": email_lower.split("@")[0],
@@ -103,15 +104,27 @@ async def add_allowed_email(request: AllowedEmailRequest):
     email_lower = request.email.lower().strip()
     chat_db = ChatDatabase(settings)
 
+    hashed_pw = None
+    if request.password:
+        import hashlib
+        hashed_pw = hashlib.sha256(request.password.encode("utf-8")).hexdigest()
+    else:
+        import hashlib
+        hashed_pw = hashlib.sha256("password123".encode("utf-8")).hexdigest()
+
     with chat_db._cursor() as cur:
         if cur is None:
             raise HTTPException(status_code=500, detail="Database connection failed.")
         cur.execute(
-            "INSERT INTO allowed_users (email) VALUES (%s) ON CONFLICT (email) DO NOTHING;",
-            (email_lower,)
+            """
+            INSERT INTO allowed_users (email, password)
+            VALUES (%s, %s)
+            ON CONFLICT (email) DO UPDATE SET password = EXCLUDED.password;
+            """,
+            (email_lower, hashed_pw)
         )
-    log.info(f"Added '{email_lower}' to allowed users list.")
-    return {"status": "success", "message": f"Email '{email_lower}' added to allowed list."}
+    log.info(f"Added/updated '{email_lower}' in allowed users list.")
+    return {"status": "success", "message": f"Email '{email_lower}' registered/updated in allowed list."}
 
 
 @router.delete("/allowed-emails/{email}")

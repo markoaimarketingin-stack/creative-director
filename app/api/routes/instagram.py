@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Header
 
 from app.api.auth import require_api_auth
 from app.auth import get_current_user
@@ -124,10 +124,12 @@ async def get_ingestion_result(
 async def get_trend_history(
     current_user: dict = Depends(get_current_user),
     container: ServiceContainer = Depends(get_container),
+    x_client_email: str | None = Header(None),
 ):
     storage = container.engine._storage
+    email = current_user.get("username") or x_client_email
     if storage and hasattr(storage, "load_instagram_trend_snapshots"):
-        return {"items": storage.load_instagram_trend_snapshots()}
+        return {"items": storage.load_instagram_trend_snapshots(client_email=email)}
     return {"items": []}
 
 
@@ -135,10 +137,12 @@ async def get_trend_history(
 async def get_competitor_benchmarks(
     current_user: dict = Depends(get_current_user),
     container: ServiceContainer = Depends(get_container),
+    x_client_email: str | None = Header(None),
 ):
     storage = container.engine._storage
+    email = current_user.get("username") or x_client_email
     if storage and hasattr(storage, "load_instagram_competitor_benchmarks"):
-        return {"items": storage.load_instagram_competitor_benchmarks()}
+        return {"items": storage.load_instagram_competitor_benchmarks(client_email=email)}
     return {"items": []}
 
 
@@ -146,8 +150,10 @@ async def get_competitor_benchmarks(
 async def get_reel_library(
     current_user: dict = Depends(get_current_user),
     container: ServiceContainer = Depends(get_container),
+    x_client_email: str | None = Header(None),
 ):
     storage = container.engine._storage
+    email = current_user.get("username") or x_client_email
     if storage and hasattr(storage, "load_instagram_reel_library"):
-        return {"items": storage.load_instagram_reel_library()}
+        return {"items": storage.load_instagram_reel_library(client_email=email)}
     return {"items": []}

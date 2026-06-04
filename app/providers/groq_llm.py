@@ -36,6 +36,9 @@ from contextvars import ContextVar
 
 custom_groq_key_var: ContextVar[str | None] = ContextVar("custom_groq_key", default=None)
 custom_gemini_key_var: ContextVar[str | None] = ContextVar("custom_gemini_key", default=None)
+custom_hf_key_var: ContextVar[str | None] = ContextVar("custom_hf_key", default=None)
+custom_nanobanana_key_var: ContextVar[str | None] = ContextVar("custom_nanobanana_key", default=None)
+custom_client_email_var: ContextVar[str | None] = ContextVar("custom_client_email", default=None)
 
 
 class GroqLLMProvider:

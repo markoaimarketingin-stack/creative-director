@@ -399,14 +399,14 @@ class CreativeDirectorEngine:
 
         return rendered_assets
 
-    def get_top_creatives(self, *, limit: int | None, platform: Platform | None):
+    def get_top_creatives(self, *, limit: int | None, platform: Platform | None, client_email: str | None = None):
         if self._database:
-            return self._database.get_top_creatives(limit=limit, platform=platform)
-        return self._storage.get_top_creatives(limit=limit, platform=platform)
+            return self._database.get_top_creatives(limit=limit, platform=platform, client_email=client_email)
+        return self._storage.get_top_creatives(limit=limit, platform=platform, client_email=client_email)
 
-    def get_campaign_history(self, *, limit: int | None, platform: Platform | None):
+    def get_campaign_history(self, *, limit: int | None, platform: Platform | None, client_email: str | None = None):
         if self._database:
-            return self._database.get_campaign_history(limit=limit, platform=platform)
+            return self._database.get_campaign_history(limit=limit, platform=platform, client_email=client_email)
         return self._storage.get_campaign_history(limit=limit, platform=platform)
 
 

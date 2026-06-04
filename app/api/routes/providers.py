@@ -81,3 +81,70 @@ async def provider_health(current_user: dict = Depends(get_current_user)) -> dic
         health["huggingface"]["detail"] = "Missing HF_API_KEY"
 
     return health
+
+
+from pydantic import BaseModel
+from app.services.database import ChatDatabase
+
+
+class SaveKeysRequest(BaseModel):
+    groq_api_key: str | None = None
+    gemini_api_key: str | None = None
+    hf_api_key: str | None = None
+    nanobanana_api_key: str | None = None
+
+
+def mask_key(key: str | None) -> str | None:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "****"
+    return f"{key[:4]}...{key[-4:]}"
+
+
+@router.get("/api/providers/keys")
+async def get_providers_keys(current_user: dict = Depends(get_current_user)) -> dict:
+    settings = get_settings()
+    chat_db = ChatDatabase(settings)
+    email = current_user.get("username")
+    keys = chat_db.get_client_api_keys(email)
+    return {
+        "groq_api_key": mask_key(keys.get("groq_api_key")),
+        "gemini_api_key": mask_key(keys.get("gemini_api_key")),
+        "hf_api_key": mask_key(keys.get("hf_api_key")),
+        "nanobanana_api_key": mask_key(keys.get("nanobanana_api_key")),
+    }
+
+
+@router.post("/api/providers/keys")
+async def save_providers_keys(request: SaveKeysRequest, current_user: dict = Depends(get_current_user)) -> dict:
+    settings = get_settings()
+    chat_db = ChatDatabase(settings)
+    email = current_user.get("username")
+    
+    existing = chat_db.get_client_api_keys(email)
+    
+    groq = request.groq_api_key
+    if groq and ("..." in groq or groq.startswith("****")):
+        groq = existing.get("groq_api_key")
+        
+    gemini = request.gemini_api_key
+    if gemini and ("..." in gemini or gemini.startswith("****")):
+        gemini = existing.get("gemini_api_key")
+        
+    hf = request.hf_api_key
+    if hf and ("..." in hf or hf.startswith("****")):
+        hf = existing.get("hf_api_key")
+        
+    nanobanana = request.nanobanana_api_key
+    if nanobanana and ("..." in nanobanana or nanobanana.startswith("****")):
+        nanobanana = existing.get("nanobanana_api_key")
+        
+    chat_db.save_client_api_keys(
+        client_email=email,
+        groq_key=groq,
+        gemini_key=gemini,
+        hf_key=hf,
+        nanobanana_key=nanobanana
+    )
+    return {"status": "success", "message": "API keys successfully updated."}

@@ -30,6 +30,12 @@ class NanoBananaClient:
 
         )
 
+    @property
+    def api_key(self) -> str | None:
+        from app.providers.groq_llm import custom_nanobanana_key_var
+        custom = custom_nanobanana_key_var.get()
+        return self._normalize_api_key(custom) if custom is not None else self._api_key
+
     async def generate_batch(
         self,
         concepts: list[VisualConcept],
@@ -47,7 +53,7 @@ class NanoBananaClient:
         platform: Platform,
         sample_images: list[str] | None = None,
     ) -> GeneratedCreative:
-        if not self._api_key:
+        if not self.api_key:
             return GeneratedCreative(
                 concept_id=concept.concept_id,
                 provider="nanobanana",
@@ -118,7 +124,7 @@ class NanoBananaClient:
 
     def _headers(self) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self._api_key}",
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
